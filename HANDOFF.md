@@ -18,17 +18,16 @@ build stamp, and standard docs are being created now.
 
 ## 📌 Where we stopped
 
-Mid `project-setup` skill run: package skeleton and docs written, venv
-created and package installed editable, about to run the smoke test, commit
-the scaffold, build-stamp it, and create the GitHub repo.
+`project-setup` complete: smoke gate green (3/3), scaffold committed (2
+commits on `main`), build stamp baked, GitHub repo created and pushed
+(`graysonchalmers/Tool-ArmorPaintMCP`, private,
+https://github.com/graysonchalmers/Tool-ArmorPaintMCP).
 
 ## ▶️ Next concrete step
 
-Finish `project-setup`: run `smoke/smoke.ps1`, record the Phase 0 gate in
-`STATUS.md` with evidence, `git init` + first commit, generate the build
-stamp, create the GitHub repo (`graysonchalmers/Tool-ArmorPaintMCP`, private).
-Then hand off to `writing-plans` for Phase 1 (`reexport_project` tool, the
-first real MCP tool — pure native export flags, no minic script needed).
+Hand off to `writing-plans` for Phase 1 (`reexport_project` tool — the first
+real MCP tool, pure native `--export-textures` flags, no minic script
+needed; see [docs/PLAN.md](docs/PLAN.md)).
 
 Alternatives:
 - Skip the GitHub repo creation and stay local-only a while longer — lower
