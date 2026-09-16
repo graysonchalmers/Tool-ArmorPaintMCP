@@ -69,6 +69,7 @@ def run_api(binary: str, project: str, timeout_s: float = DEFAULT_TIMEOUT_S) -> 
         proc = subprocess.run(
             [binary, project, "--api"],
             capture_output=True, text=True, timeout=timeout_s,
+            errors="replace",
         )
     except subprocess.TimeoutExpired:
         return ApiResult(ok=False, text="",
