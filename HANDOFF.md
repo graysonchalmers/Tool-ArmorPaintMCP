@@ -20,16 +20,16 @@ Implementation plan: [docs/PLAN.md](docs/PLAN.md).
 
 ## 📌 Where we stopped
 
-All 8 tasks of the Phase 1 plan
-(`.superpowers/sdd/2026-09-15-phase1-reexport-project/`) are complete and
-reviewed clean, executed on feature branch **`phase1-reexport-project`**
-(a controller decision made before Task 1, for safety — work did not
-proceed directly on `main`). The final whole-branch review's one Critical
-and six Important findings have since been fixed on the same branch (see
-`.superpowers/sdd/2026-09-15-phase1-reexport-project/final-review-fix-report.md`);
-the headline of that wave is that export completion is now decided against
-the files the chosen preset says it writes, not against "filenames that are
-new since we started". Verification sweep is green:
+All 8 tasks of the Phase 1 plan are complete and reviewed clean, executed
+on feature branch `phase1-reexport-project` (a controller decision made
+before Task 1, for safety — work did not proceed directly on `main`). The
+final whole-branch review's one Critical and six Important findings were
+fixed on the same branch (the SDD execution ledger with the full writeup
+was scratch workspace, deleted per process once the branch merged cleanly —
+see this file's session log below and the git history for the record); the
+headline of that wave is that export completion is now decided against the
+files the chosen preset says it writes, not against "filenames that are new
+since we started". Verification sweep is green:
 
 - `pytest -q` → 29 passed, 1 deselected (unit-only is now the default,
   via `addopts` in `pyproject.toml`)
@@ -38,21 +38,16 @@ new since we started". Verification sweep is green:
 - `python -m armorpaint_mcp.server --check` (with `AP_BINARY` set) → all
   checks passed, exit 0
 
-Branch is **pushed to origin** (`phase1-reexport-project`,
-https://github.com/graysonchalmers/Tool-ArmorPaintMCP/tree/phase1-reexport-project)
-but **not yet merged to `main`** — that merge/integration decision belongs
-to a separate controller-level step (`superpowers:finishing-a-development-branch`),
-not to this task.
+**Merged to `main` and pushed** via `superpowers:finishing-a-development-branch`
+(fast-forward, `0447c03..46f6b37`, tests re-verified green on the merged
+result). `phase1-reexport-project` (local and remote) has been deleted —
+its history lives on in `main`'s git log now.
 
 ## ▶️ Next concrete step
 
-Run `superpowers:finishing-a-development-branch` to decide how
-`phase1-reexport-project` integrates into `main` (merge, PR, or otherwise).
-
-After that's settled, Phase 2 is `rebake_and_export` — the first tool that
-needs a minic script template (not just native CLI flags like Phase 1's
-`reexport_project`). Hand off to `writing-plans` for that once the branch
-question is resolved.
+Phase 2 is `rebake_and_export` — the first tool that needs a minic script
+template (not just native CLI flags like Phase 1's `reexport_project`).
+Hand off to `writing-plans` for that.
 
 Alternatives:
 - Jump straight to hand-verifying the minic scripting API actually covers
@@ -72,7 +67,7 @@ Alternatives:
 
 ## 🗂️ Changed this session
 
-- Branch: `phase1-reexport-project` (pushed to origin, not merged to `main`).
+- Branch: `phase1-reexport-project`, merged to `main` and deleted.
 - Files: `paths.py`, `runner.py`, `reexport_project` MCP tool, integration
   test + real binary `.arm` fixture, `docs/images/` gallery + caption,
   `HANDOFF.md` (this update).
@@ -115,8 +110,7 @@ Alternatives:
 - Added a docs gallery with two real (if visually flat/deliberately-blank
   fixture) example output images and an honest caption.
 - Task 8 final verification sweep all green (unit, integration, smoke,
-  `--check`); pushed `phase1-reexport-project` to origin (not merged to
-  `main` — that's next, via `superpowers:finishing-a-development-branch`).
+  `--check`); pushed `phase1-reexport-project` to origin.
 
 ### 2026-09-15 — final whole-branch review fix wave
 - Fixed the review's Critical finding: `runner.py` decided success by
@@ -132,3 +126,15 @@ Alternatives:
   smoke probe), `pytest -q` silently running the integration test,
   `try/finally` around the poll loop so the GUI process can't be leaked,
   and `AP_OUTPUT_DIR` documented as live when nothing reads it.
+- Scoped re-review: all findings addressed, no new Critical/Important
+  breakage. Three items parked (not load-bearing): a stale docstring in
+  `tests/test_reexport_integration.py` still naming the pre-`addopts`
+  invocation; a theoretical uncaught `AttributeError` in `runner.py` if a
+  preset JSON's `textures` entries were ever malformed (unreachable against
+  every real preset in this install); and a narrow case where a config
+  failure's actionable message gets masked by the MCP SDK's generic error
+  wrapping (matches this project's pre-existing `main()` convention, not a
+  regression).
+- Merged `phase1-reexport-project` into `main` (fast-forward,
+  `0447c03..46f6b37`), re-verified green, deleted the branch locally and on
+  origin.
