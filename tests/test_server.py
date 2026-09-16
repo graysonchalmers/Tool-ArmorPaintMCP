@@ -5,9 +5,9 @@ import pytest
 
 from armorpaint_mcp import server
 from armorpaint_mcp.catalog import CatalogError
-from armorpaint_mcp.runner import ExportResult, ApiResult
+from armorpaint_mcp.runner import DEFAULT_TIMEOUT_S, ExportResult, ApiResult, ScriptResult
 from armorpaint_mcp.server import (mcp, reexport_project, create_procedural_material,
-                                   list_available_presets, inspect_project)
+                                   list_available_presets, inspect_project, run_script)
 
 
 @pytest.fixture(autouse=True)
@@ -386,3 +386,114 @@ def test_inspect_project_uses_layer_blend_modes_not_material_blend_modes(tmp_pat
 def test_inspect_project_registered_as_mcp_tool():
     names = [t.name for t in asyncio.run(mcp.list_tools())]
     assert "inspect_project" in names
+
+
+def test_run_script_rejects_path_outside_allowed_roots(tmp_path):
+    root = tmp_path / "allowed"
+    root.mkdir()
+    outside_project = tmp_path / "elsewhere" / "project.arm"
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg:
+        mock_cfg.return_value.binary = str(tmp_path / "ArmorPaint.exe")
+        mock_cfg.return_value.allowed_roots = [str(root)]
+        result = run_script(project=str(outside_project), script="void main() {}")
+
+    assert result["ok"] is False
+    assert result["stdout"] is None
+    assert "allowed" in result["error"]
+
+
+def test_run_script_rejects_nonexistent_project_path(tmp_path):
+    """Same phantom-default-project trap inspect_project guards against
+    (Phase 3 Finding 2): a bogus project path would otherwise make
+    ArmorPaint silently run the caller's script against its own empty
+    default project instead of failing."""
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg:
+        mock_cfg.return_value.binary = str(tmp_path / "ArmorPaint.exe")
+        mock_cfg.return_value.allowed_roots = []
+        result = run_script(project=str(tmp_path / "does_not_exist.arm"),
+                            script="void main() {}")
+
+    assert result["ok"] is False
+    assert result["stdout"] is None
+    assert "not an existing .arm project file" in result["error"]
+
+
+def test_run_script_rejects_existing_file_with_wrong_extension(tmp_path):
+    not_arm = tmp_path / "README.md"
+    not_arm.write_text("not a project")
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg:
+        mock_cfg.return_value.binary = str(tmp_path / "ArmorPaint.exe")
+        mock_cfg.return_value.allowed_roots = []
+        result = run_script(project=str(not_arm), script="void main() {}")
+
+    assert result["ok"] is False
+    assert "not an existing .arm project file" in result["error"]
+
+
+def test_run_script_calls_runner_and_returns_result(tmp_path):
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
+        mock_cfg.return_value.binary = str(tmp_path / "ArmorPaint.exe")
+        mock_cfg.return_value.allowed_roots = []
+        # NOTE: this "out" is a mocked value for plumbing verification only --
+        # the real ArmorPaint binary's script-facing console output
+        # (console_log() etc.) writes via WriteConsoleW directly to the
+        # console handle, which subprocess pipe capture does not see on this
+        # platform, so stdout/stderr are typically empty in practice even on
+        # a successful real run. This test only checks that server.run_script
+        # forwards whatever runner.run_minic_script returns.
+        mock_run.return_value = ScriptResult(ok=True, stdout="out", stderr="")
+
+        result = run_script(project=str(project), script="void main() {}")
+
+    assert result == {"ok": True, "stdout": "out", "stderr": "", "error": None}
+    mock_run.assert_called_once_with(
+        mock_cfg.return_value.binary, str(project), "void main() {}", DEFAULT_TIMEOUT_S)
+
+
+def test_run_script_passes_custom_timeout_s_through(tmp_path):
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
+        mock_cfg.return_value.binary = str(tmp_path / "ArmorPaint.exe")
+        mock_cfg.return_value.allowed_roots = []
+        mock_run.return_value = ScriptResult(ok=True, stdout="", stderr="")
+
+        run_script(project=str(project), script="void main() {}", timeout_s=120.0)
+
+    mock_run.assert_called_once_with(
+        mock_cfg.return_value.binary, str(project), "void main() {}", 120.0)
+
+
+def test_run_script_nulls_stdout_stderr_on_runner_failure(tmp_path):
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
+        mock_cfg.return_value.binary = str(tmp_path / "ArmorPaint.exe")
+        mock_cfg.return_value.allowed_roots = []
+        mock_run.return_value = ScriptResult(ok=False, stdout="partial",
+                                             stderr="err", error="'--script' exited 1: err")
+
+        result = run_script(project=str(project), script="void main() {}")
+
+    assert result == {"ok": False, "stdout": None, "stderr": None,
+                       "error": "'--script' exited 1: err"}
+
+
+def test_run_script_is_registered_as_an_mcp_tool():
+    tools = asyncio.run(mcp.list_tools())
+
+    by_name = {t.name: t for t in tools}
+    assert "run_script" in by_name, sorted(by_name)
+    tool = by_name["run_script"]
+    assert set(tool.input_schema["properties"]) == {"project", "script", "timeout_s"}
+    assert set(tool.input_schema.get("required", [])) == {"project", "script"}
