@@ -1,8 +1,18 @@
 # Tool-ArmorPaintMCP — design spec
 
 **Date:** 2026-09-15
-**Status:** approved by Grayson via brainstorming session; not yet implemented.
+**Status:** approved by Grayson via brainstorming session; Phase 1 planning in
+progress.
 **Author:** Claude (claude-code), with Grayson Chalmers steering.
+
+> **Amendment (2026-09-15, Phase 1 planning):** two assumptions below were
+> corrected after empirical testing against the real local build (not just
+> source reading) — see `docs/PLAN.md`'s Phase 1 section for the full
+> writeup. Summary: (1) `--background` combined with `--export-textures` is
+> silently broken (exits 0, produces nothing); the working path launches
+> without `--background`, polls for output, then terminates the process.
+> (2) Resolution has no CLI flag or confirmed minic setter, so it's dropped
+> from `reexport_project`'s v1 signature — `preset` only.
 
 ## Problem
 
@@ -75,7 +85,10 @@ Tool-MaterialMaker-MCP's stack exactly). Each tool call:
    - Rebaking needs a script, since baking isn't exposed as a CLI flag; the
      script comes from a small parameterized template in `templates/`, not
      generated node-graph code.
-3. Spawn the process, wait for exit (with timeout).
+3. Spawn the process and wait for it to finish (with timeout). **Correction:**
+   for `--export-textures`, this means launching *without* `--background`
+   (that combination is broken — see amendment above), polling the output
+   dir for expected files, then terminating the process once they appear.
 4. Scan the output directory for expected files.
 5. Return a structured result (success/failure, file paths, trimmed
    stderr/log excerpt on failure) to the assistant.
@@ -99,8 +112,8 @@ built and verified locally today (2026-09-15).
 - `list_export_presets` — read-only, from the catalog.
 - `inspect_project(project)` — read-only `.arm` metadata (objects, materials,
   layers) via a read-only script.
-- `reexport_project(project, preset, resolution, output_dir)` — native flags
-  only, no script.
+- `reexport_project(project, preset, output_dir)` — native flags only, no
+  script. (`resolution` dropped — see amendment above.)
 - `rebake_and_export(project, bake_types, preset, output_dir)` — minic script
   (from template) + export flags. Operates on a **copy** of the project by
   default (see Safety).

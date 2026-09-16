@@ -20,16 +20,29 @@ in Phase 1.)
 ## Phase 1 — `reexport_project`
 
 The first real tool: re-export an existing `.arm` project at a different
-export preset/resolution, using ArmorPaint's native
-`--background --export-textures <type> <preset> <path>` flags directly — no
-minic script involved. Includes `runner.py` (the subprocess wrapper:
-build args, spawn, timeout, capture exit code/stdout/stderr, scan output
-dir) and `paths.py` (AP_ALLOWED_ROOTS enforcement, path-traversal rejection).
+export preset, using ArmorPaint's native `--export-textures <type> <preset>
+<path>` flag. **Confirmed empirically (2026-09-15), not just from source
+reading:** `--background` combined with `--export-textures` is silently
+broken on this build — `iron_stop()` fires in the same frame that merely
+*schedules* the export for the next frame, so the process exits with code 0
+having produced nothing. Without `--background` the same export works
+correctly (verified: 5 real PNGs for the "generic" preset), but the GUI
+process doesn't self-exit afterward — `runner.py` launches it, polls the
+output dir for the expected files with a timeout, then terminates the
+process itself. **Resolution is dropped from this phase's tool signature**:
+no CLI flag and no confirmed minic setter exist for it (it reads from a
+static app config, `config_get_texture_res_x/y`); only `preset` is
+controllable per call. Includes `runner.py` (the process wrapper: build
+args, spawn without `--background`, poll for output, terminate, capture
+exit code/stdout/stderr) and `paths.py` (AP_ALLOWED_ROOTS enforcement,
+path-traversal rejection).
 
 **Gate:** an integration smoke test shells out to the real local ArmorPaint
-build against a small sample `.arm` project and asserts the expected texture
-files land on disk. Unit tests for arg-building pass without ArmorPaint
-running.
+build against a small sample `.arm` project (created headlessly via
+`--background --script`, calling minic's `script_project_new()` +
+`project_filepath_set()` + `project_save()` — confirmed working) and asserts
+the expected texture files land on disk. Unit tests for arg-building pass
+without ArmorPaint running.
 
 ## Phase 2 — `rebake_and_export`
 
