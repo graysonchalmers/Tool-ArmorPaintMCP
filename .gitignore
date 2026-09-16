@@ -12,3 +12,5 @@ output/
 build-stamp.json
 
 .DS_Store
+
+.superpowers/
