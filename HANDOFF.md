@@ -6,116 +6,105 @@ _Last updated: 2026-09-16_
 
 ## 🎯 Current state
 
-Phases 1-3 are all shipped on `main` and pushed: `reexport_project`,
-`create_procedural_material` + `list_available_presets`, and now
-`inspect_project` (a read-only `.arm` metadata query — objects, materials,
-layers) + `catalog.py`'s dynamic blend-mode extraction. The gallery also
-got a real upgrade this session — noise and Voronoi procedural-material
-renders replace the old flat checker/solid swatches as the visual
-centerpiece. Design spec:
+**Phase 4 (`run_script`) is shipped — v1's tool surface is now complete.**
+All five planned tools are implemented, tested, and gated:
+`reexport_project`, `create_procedural_material` + `list_available_presets`,
+`inspect_project`, and now `run_script` — an escape-hatch tool that hands
+the caller's own minic (.c) source straight to ArmorPaint's `--script` flag
+against an already-open project, for anything the four purpose-built tools
+don't cover. `pyproject.toml`'s classifier moved from Pre-Alpha to Alpha and
+the README got a pass reflecting the complete v1 surface. Design spec:
 [docs/superpowers/specs/2026-09-15-armorpaint-mcp-design.md](docs/superpowers/specs/2026-09-15-armorpaint-mcp-design.md).
-Implementation plan: [docs/PLAN.md](docs/PLAN.md). Phase 3's own plan is
-recorded at [docs/superpowers/plans/2026-09-16-phase3-inspect-project.md](docs/superpowers/plans/2026-09-16-phase3-inspect-project.md).
+Implementation plan: [docs/PLAN.md](docs/PLAN.md). Phase 4's own plan is
+recorded at [docs/superpowers/plans/2026-09-16-phase4-run-script.md](docs/superpowers/plans/2026-09-16-phase4-run-script.md).
 
 ## 📌 Where we stopped
 
-Session had two threads, both closed out:
+Phase 4 (`run_script` + docs/packaging polish) executed as a 5-task plan
+(`docs/superpowers/plans/2026-09-16-phase4-run-script.md`) in an isolated
+worktree (`worktree-worktree-phase4-run-script`), each task committed and
+reviewed before the next:
 
-**1. Better gallery screenshots** (the ask that opened the session). Spiked
-whether ArmorPaint's minic engine supports node types beyond the two
-`create_procedural_material` ships, and multiple build/fill/export cycles
-in one `--script` process — both confirmed working against the real local
-build in one shot (checker/noise/Voronoi, 3 cycles, 1 process, all 15
-expected files landed). `scripts/generate_gallery.py` (hand-written minic,
-deliberately outside the shipped tool surface, same convention as
-`tests/fixtures/generate_fixture.py`) renders noise (~791K distinct
-colors) and Voronoi (cellular, ~771 colors) — both dramatically richer than
-the old checker's 3-color swatches. Committed straight to `main` first
-(`03735eb`), ahead of the Phase 3 merge, since it touched `README.md` and
-needed to land before a clean merge was possible.
+- **Task 1** (`c09bff0`) — `runner.run_minic_script`: launches ArmorPaint
+  **with** `--background` this time (a confirmed departure from Phases 1-2's
+  no-`--background` pattern — see the plan's "Empirical findings"),
+  `subprocess.run([binary, project, "--background", "--script", path])`
+  against an already-open project. Empirically confirmed the process
+  self-exits cleanly in ~1-2s and runs the script correctly, so **no
+  poll-and-terminate dance is needed** here (unlike `--export-textures`,
+  where Amendment 1 found `--background` races ahead of a deferred export —
+  this is a different code path: `args_run_script`'s `minic_eval()` runs
+  synchronously before `iron_stop()` is scheduled). Also reconfirmed minic's
+  known silent-failure mode: a script calling an undefined function exits 0
+  with empty stdout/stderr, identical to success — `ok=True` proves only
+  that the ArmorPaint process completed, never that the script did what was
+  asked. Documented prominently in the docstring so callers don't
+  over-trust the return value.
+- **Task 2** (`e29614c`) — registered `run_script` as the server's fifth MCP
+  tool, mirroring `inspect_project`'s exact pattern: same
+  `AP_ALLOWED_ROOTS` sandboxing via `ensure_within_roots`, and the same
+  phantom-default-project guard (file-exists + `.arm`-extension check
+  before launching ArmorPaint, so a bogus path can't silently make
+  ArmorPaint open its own empty default project and report a false
+  `ok: True` — the Phase 3 Critical-finding pattern, applied proactively
+  here instead of needing a second review cycle to catch it).
+- **Task 3** (`8fbcdb4`) — `tests/test_run_script_integration.py`: two real
+  end-to-end tests against the actual local `ArmorPaint.exe`, filling a
+  layer and exporting textures via `--script` against the fixture project.
+  Both passed first run; full suites green with no regressions (87/87 unit,
+  6/6 integration at that point in the branch).
+- **Task 4** — Phase 4 plan doc itself, committed (`698080c`) before
+  implementation started, continuing Phase 1-3's precedent of the plan
+  living in git history, not just the worktree.
+- **Task 5 (this task)** — final verification sweep + `README.md` /
+  `pyproject.toml` polish (`8735118`): `Development Status` classifier
+  moved Pre-Alpha → Alpha, README's Status section now states all five v1
+  tools are shipped, and a short escape-hatch blurb for `run_script` was
+  added to the tools section.
 
-**2. Phase 3: `inspect_project` + dynamic catalog.** Key discovery:
-`ArmorPaint.exe <project> --api` is a third, previously-unused automation
-path — pass it a project and it dumps the *entire* project state as JSON
-(objects, materials, layers, large arrays omitted) plus a text node-type
-reference, in one clean subprocess call with **no poll-and-terminate
-dance** (unlike the existing `--export-textures`/`--script` flows — `--api`
-sets `args_background = true` internally and self-exits). Ran the full
-`writing-plans` → `subagent-driven-development` lifecycle in an isolated
-worktree (6 tasks, each independently reviewed clean). The **final
-whole-branch review (opus) caught two real Critical bugs** the per-task
-reviews missed:
-- Layer blend-mode names were silently wrong for 6 of 18 modes (index ≥
-  12): the code indexed `layer_datas[].blending` into the wrong enum — the
-  MIX_RGB *material node's* 19-entry blend-type ENUM (parseable from
-  `--api` text) instead of ArmorPaint's actual 18-entry layer `blend_type_t`
-  C enum (`paint/sources/enums.h:135-154`, confirmed by reading the source
-  directly — **never exposed as text anywhere**, so this one field is a
-  deliberate, documented exception to "dynamic catalogs only," hardcoded
-  and cited). Fixed via a new `catalog.layer_blend_modes()`.
-- `inspect_project` returned `ok: True` describing ArmorPaint's *phantom
-  default project* for a nonexistent or non-`.arm` path — confirmed against
-  the real binary that a typo'd path silently opens nothing and reports a
-  confident, wrong answer. Fixed with a file-exists + `.arm`-extension
-  guard before launching ArmorPaint.
-- Plus 2 Important test-coverage gaps closed in the same fix wave: the
-  real-fixture integration test was tightened (it previously asserted only
-  types/truthiness — a shape the phantom-project bug also satisfied), and a
-  regression test for the blend-index-≥-12 case was added (unit-level,
-  since an exhaustive search of all ~55 minic `script_*` functions found no
-  way to set a layer's blend mode from a script for a real end-to-end
-  fixture).
-
-One controller ruling got **partially reversed** by that final review: I'd
-earlier accepted Task 4's multi-material fixture as sufficient even though
-it never got a second layer or exercised `material_datas` correlation,
-reasoning `inspect_project` doesn't consume `material_datas` anyway. That
-reasoning held for `material_datas` — but the **layers half of the gap was
-load-bearing**: it's exactly what hid the blend-mode bug above. Lesson
-banked in the plan's ledger, not just this doc.
-
-Verification sweep, run twice (once pre-merge on the branch, once again on
-the actual merged `main` tree — never trust a pre-merge green):
-- `pytest -q` → 76 passed, 4 deselected
-- `pytest -q -m integration` (with `AP_BINARY` set) → 4 passed (Phase 1 +
-  Phase 2's existing tests unregressed, plus both new Phase 3 tests)
-- `pwsh smoke\smoke.ps1` → 5/5 passed, exit 0 (new `inspect_project`
-  probe passing)
-
-**Merged to `main` locally, then pushed** via
-`superpowers:finishing-a-development-branch` (a real merge commit, not
-fast-forward, since `main` had the gallery commit ahead of the branch
-point). One extra fix during cleanup: the Phase 3 plan doc had only ever
-existed as a loose, uncommitted working copy in the worktree (never
-actually committed by any of that branch's own tasks) — caught this because
-`git worktree remove` refused over it, copied it onto `main`, and committed
-it for the historical record, matching Phase 1/2's own committed-plan
-precedent. `origin/main` is now at `9540526`, confirmed `0  0` against
-local `HEAD`.
+Verification run fresh on the fully-assembled branch (all counts real,
+this session):
+- `.venv\Scripts\python.exe -m pytest -q` → **87 passed, 0 failed, 6
+  deselected**
+- `.venv\Scripts\python.exe -m pytest -q -m integration` (with `AP_BINARY`
+  set to the real local `ArmorPaint.exe`) → **6 passed, 0 failed** (every
+  prior phase's integration test plus both new `run_script` tests, no
+  regressions)
+- `pwsh smoke\smoke.ps1` → **6/6 passed, exit 0**, including the new
+  `run_script registered as an MCP tool` probe
+- **Clean-clone install check** (this phase's own stated gate from
+  `docs/PLAN.md`): cloned the worktree's committed tree to a scratch temp
+  dir (not the `main`-tracking `C:\Projects-local\Tool-ArmorPaintMCP`
+  checkout, since Phase 4's commits aren't merged to `main` yet — cloning
+  from there would have tested pre-Phase-4 code), fresh `python -m venv`,
+  `pip install -e .` succeeded cleanly (built the editable wheel, all deps
+  resolved), `ap-mcp --version` and `--help` both exit 0. `ap-mcp --check`
+  correctly reported `[FAIL] AP_BINARY: not set` (exit 1) since the fresh
+  clone has no `.env` — the honest, expected result for a config-less clone,
+  not a defect in the check itself. Scratch dir removed after.
 
 ## ▶️ Next concrete step
 
-Phase 4 per `docs/PLAN.md`: `run_script` escape hatch (the purpose-built
-tool for anything the earlier purpose-built tools don't cover) +
-documentation/packaging polish (clean-clone `pip install -e .` check,
-README accuracy pass). This is the last phase in the current plan.
+**Phase 4 was the last phase in `docs/PLAN.md` — there is no Phase 5.**
+This worktree/branch still needs to be finished (merged into `main` and
+pushed, following the same `superpowers:finishing-a-development-branch`
+path Phases 1-3 used) as the immediate mechanical step. After that lands,
+the natural next work is one of:
 
-Alternatives:
-- The final review's 4 deferred Minor findings are still open in the
-  Phase 3 branch's history (not re-ledgered anywhere durable yet): stdout
-  encoding in `runner.run_api` (locale-encoding decode could raise
-  `UnicodeDecodeError` on non-ASCII object/material names — the one stdout
-  path that decodes user-supplied names, unlike the export flows which only
-  decode stderr), `blend_modes()` parse failure currently aborts the whole
-  `inspect_project` read (degrading to `blending: None` would be kinder),
-  `catalog.scene_objects`'s error convention differs from its two siblings
-  (returns `[]` silently instead of raising `CatalogError`), and a repeated
-  4-key failure-dict literal in `server.py` that could drift. None are
-  urgent; worth a cheap cleanup pass before Phase 4 if picking this up soon
-  while the context is fresh.
-- If Phase 4's `run_script` escape hatch feels premature without a concrete
-  need for it yet, a quick gut-check with Grayson on whether it's still
-  wanted before writing that plan would avoid over-building.
+- **The 4 deferred Minor findings from Phase 3's final review**, still open
+  and not yet re-ledgered anywhere durable: stdout encoding in
+  `runner.run_api` (locale-encoding decode could raise
+  `UnicodeDecodeError` on non-ASCII object/material names), `blend_modes()`
+  parse failure currently aborts the whole `inspect_project` read
+  (degrading to `blending: None` would be kinder), `catalog.scene_objects`'s
+  error convention differs from its two siblings (returns `[]` silently
+  instead of raising `CatalogError`), and a repeated 4-key failure-dict
+  literal in `server.py` that could drift. None are urgent — a cheap
+  cleanup pass, not a new phase.
+- **Live mode** — deferred, not rejected, per the design spec's "Deferred:
+  live mode" section (two options already named there, neither chosen).
+  Revisit only once there's an actual concrete need for interactive
+  GUI-attached control, not before.
 
 ## ❓ Open questions
 
@@ -123,36 +112,70 @@ Alternatives:
   chosen; revisit only once batch mode is solid and live mode is actually
   wanted.
 - The 4 deferred Minor findings above — worth their own small cleanup task,
-  or fold into Phase 4's "polish" scope when that plan gets written?
+  or picked up opportunistically the next time one of those files is
+  touched for an unrelated reason?
 
 ## 🗂️ Changed this session
 
-- No branch left behind: `worktree-phase3-inspect-project` was merged and
-  deleted (worktree + branch, both local), gallery work landed directly on
-  `main`. `origin/main` is in sync (`9540526`).
-- Files: `scripts/generate_gallery.py` (new) + 2 new gallery PNGs +
-  `README.md` (gallery section) for the screenshots work;
-  `src/armorpaint_mcp/{runner.py,catalog.py,server.py}`,
-  `tests/{test_runner.py,test_catalog.py,test_server.py,test_inspect_project_integration.py,fixtures/generate_multi_fixture.py,fixtures/sample_project_multi.arm}`,
-  `smoke/smoke.ps1`, `docs/PLAN.md`, `STATUS.md`, `README.md`,
-  `docs/superpowers/plans/2026-09-16-phase3-inspect-project.md` for Phase 3.
-- Decisions (+ why): dropped bake-type cataloging from Phase 3 entirely —
-  ArmorPaint's `--api` never exposes the bake-type option list as text
-  (`TEX_BAKE`'s selector is a `CUSTOM` widget, not an `ENUM`), and no tool
-  can invoke baking anyway (already closed as structurally unreachable,
-  `STATUS.md` Known Issue #1), so a bake-type catalog would have zero
-  consumers; hardcoded `layer_blend_modes()` as a documented, cited
-  exception to "dynamic catalogs only" rather than silently reusing the
-  wrong (but text-available) MIX_RGB enum, once the final review proved
-  they're genuinely different lists; ruled Task 4's shipped scope
-  acceptable against its own literal steps even though its "why this task
-  exists" prose promised more — then let the final review's evidence
-  override that ruling on the one point (layers) where it turned out to
-  matter, rather than defending the earlier call past the point it held up.
+- Still on the isolated worktree/branch `worktree-worktree-phase4-run-script`
+  — **not yet merged to `main`**. Merging is the immediate next mechanical
+  step (see "Next concrete step" above), not done as part of this task.
+- Files this session: `src/armorpaint_mcp/runner.py` (`run_minic_script`),
+  `src/armorpaint_mcp/server.py` (`run_script` tool registration),
+  `tests/test_runner.py`, `tests/test_server.py`,
+  `tests/test_run_script_integration.py` (new), `smoke/smoke.ps1` (new
+  probe), `docs/superpowers/plans/2026-09-16-phase4-run-script.md` (new),
+  `README.md`, `pyproject.toml`, `STATUS.md`, `HANDOFF.md`.
+- Decisions (+ why): launched `run_minic_script` **with** `--background`
+  (a departure from Phase 1-2's runner functions, which deliberately omit
+  it) after confirming empirically that `--background` + `--script` against
+  an already-open project self-exits cleanly with no poll-and-terminate
+  needed — a different code path from the `--background` + `--export-textures`
+  combination Amendment 1 found racy; applied `inspect_project`'s
+  phantom-default-project guard to `run_script` proactively at
+  implementation time (Task 2) instead of waiting for a review cycle to
+  catch it, since Phase 3's final review had already established the
+  pattern; for the clean-clone check (this task), cloned from the worktree
+  itself rather than the brief's literal `C:\Projects-local\Tool-ArmorPaintMCP`
+  path, since Phase 4's commits live only on this unmerged branch and
+  cloning the `main`-tracking checkout would have silently tested
+  pre-Phase-4 code.
 
 ---
 
 ## 🕓 Session log
+
+### 2026-09-16 — Phase 4 (`run_script` escape hatch + v1 polish)
+- Picked up with Phases 1-3 shipped and pushed to `main`; `docs/PLAN.md`
+  named Phase 4 (`run_script` + docs/packaging polish) as the final planned
+  phase.
+- Wrote a 5-task plan (`docs/superpowers/plans/2026-09-16-phase4-run-script.md`)
+  and executed it task-by-task in an isolated worktree
+  (`worktree-worktree-phase4-run-script`), each task committed and reviewed
+  before the next: `runner.run_minic_script` (Task 1, `c09bff0`), the
+  `run_script` MCP tool registration mirroring `inspect_project`'s
+  sandboxing + phantom-project guard (Task 2, `e29614c`), a real-binary
+  integration test (Task 3, `8fbcdb4`), the plan doc itself (Task 4,
+  `698080c`), and this final verification sweep + docs update (Task 5).
+- Confirmed empirically (not assumed from source-reading) that
+  `--background` + `--script` against an already-open project behaves
+  differently from `--background` + `--export-textures`: the former
+  self-exits cleanly with no race, letting Phase 4 skip the
+  poll-and-terminate dance every earlier phase needed. Also reconfirmed
+  minic's silent-failure mode (an undefined-function call exits 0 with
+  empty output, same as success) and documented it prominently so
+  `run_script` callers don't over-trust `ok: True`.
+- Ran the full verification sweep fresh on the assembled branch: unit
+  (87 passed, 6 deselected), integration with the real local
+  `ArmorPaint.exe` (6 passed, no regressions), smoke harness (6/6, exit 0,
+  new `run_script` probe passing), and the clean-clone install check
+  specified as this phase's own gate in `docs/PLAN.md` (`git clone` to a
+  scratch temp dir, fresh venv, `pip install -e .`, `--version`/`--help`
+  exit 0, `--check` correctly red on missing `AP_BINARY` for a
+  config-less clone — the expected, honest result).
+- Updated `STATUS.md` (Phase 4 gate row + detail table, `Open phase` set to
+  "none") and this file to reflect v1's tool surface being complete, and
+  that Phase 4 was the last phase in the plan — no Phase 5 exists.
 
 ### 2026-09-16 — better gallery screenshots + Phase 3 (`inspect_project`)
 - Grayson opened the session asking for better debug/smoke examples so the
