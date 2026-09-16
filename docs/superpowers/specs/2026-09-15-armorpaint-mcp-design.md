@@ -59,6 +59,29 @@ progress.
 > not a rebake tool. See `docs/PLAN.md`'s Phase 2 section for the full
 > scope and gate.
 
+> **Amendment 3: scoped patch policy for mesh/UV (2026-09-16):** Grayson's
+> priority pivoted to mesh/UV automation (see
+> [ROADMAP.md](../../../ROADMAP.md) for the full North Star, roadmap, and
+> rationale). ArmorPaint 1.0 shipped real mesh-editing tools
+> (decimate/smooth/bevel/subdivide/merge/duplicate/UV-unwrap), all wired to
+> GUI buttons only, none registered in `minic_api_list.h`. A same-session
+> spike proved this class of gap — a C function that already exists and
+> works, just isn't script-registered — closes with a one-line-per-function
+> patch (ArmorPaint's own X-macro system auto-generates the calling thunk).
+> 6 of 7 functions patched and empirically verified against real geometry;
+> the 7th is a real dead end needing a new accessor, not a one-liner.
+>
+> **This revises, not reverses, the "Why not the reference approach"
+> decision above.** The no-source-patching stance was scoped to v1's
+> original use case (batch texture/material ops), which the stock binary
+> already fully covered — that reasoning is untouched, and rebake/
+> texture-set-swap remain exactly as unreachable as Amendment 2 found them.
+> The revision applies narrowly: register-an-existing-working-function is a
+> mechanical, low-risk patch class, unlike the reference project's ~40-struct
+> private-field bridge this spec rejected. Grayson intends to upstream the
+> patch as a PR to `armory3d/armorpaint` once ready — see ROADMAP.md's
+> "Patch policy" section for current state and what's left before submitting.
+
 ## Problem
 
 Grayson wants an MCP server that lets an AI assistant drive
