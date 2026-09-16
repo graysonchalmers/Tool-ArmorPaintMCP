@@ -12,6 +12,7 @@ from armorpaint_mcp.runner import (
     list_export_presets,
     preset_texture_names,
     run_api,
+    run_minic_script,
     run_procedural_material,
 )
 
@@ -557,6 +558,95 @@ def test_run_api_reports_timeout(tmp_path):
     with patch("armorpaint_mcp.runner.subprocess.run",
                side_effect=subprocess.TimeoutExpired(cmd="x", timeout=5.0)):
         result = run_api(str(binary), str(project), timeout_s=5.0)
+
+    assert result.ok is False
+    assert "timed out after 5.0s" in result.error
+
+
+def test_run_minic_script_returns_stdout_on_success(tmp_path):
+    binary = tmp_path / "ArmorPaint.exe"
+    binary.write_text("")
+    project = tmp_path / "project.arm"
+    project.write_text("")
+
+    with patch("armorpaint_mcp.runner.subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        result = run_minic_script(str(binary), str(project), "void main() {}")
+
+    mock_run.assert_called_once()
+    args = mock_run.call_args[0][0]
+    assert args[0] == str(binary)
+    assert args[1] == str(project)
+    assert "--background" in args
+    assert "--script" in args
+    assert result.ok is True
+    assert result.stdout == ""
+    assert result.stderr == ""
+    assert result.error is None
+
+
+def test_run_minic_script_writes_the_given_script_text(tmp_path):
+    binary = tmp_path / "ArmorPaint.exe"
+    binary.write_text("")
+    project = tmp_path / "project.arm"
+    project.write_text("")
+    written = {}
+
+    def fake_run(args, **kwargs):
+        script_path = args[args.index("--script") + 1]
+        with open(script_path, encoding="utf-8") as fh:
+            written["content"] = fh.read()
+        return MagicMock(returncode=0, stdout="", stderr="")
+
+    with patch("armorpaint_mcp.runner.subprocess.run", side_effect=fake_run):
+        run_minic_script(str(binary), str(project), "void main() { /* marker */ }")
+
+    assert written["content"] == "void main() { /* marker */ }"
+
+
+def test_run_minic_script_cleans_up_tempfile_even_on_failure(tmp_path):
+    binary = tmp_path / "ArmorPaint.exe"
+    binary.write_text("")
+    project = tmp_path / "project.arm"
+    project.write_text("")
+    captured = {}
+
+    def fake_run(args, **kwargs):
+        captured["script_path"] = args[args.index("--script") + 1]
+        return MagicMock(returncode=1, stdout="", stderr="boom")
+
+    with patch("armorpaint_mcp.runner.subprocess.run", side_effect=fake_run):
+        run_minic_script(str(binary), str(project), "void main() {}")
+
+    assert not os.path.exists(captured["script_path"])
+
+
+def test_run_minic_script_reports_nonzero_exit(tmp_path):
+    binary = tmp_path / "ArmorPaint.exe"
+    binary.write_text("")
+    project = tmp_path / "project.arm"
+    project.write_text("")
+
+    with patch("armorpaint_mcp.runner.subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="boom")
+        result = run_minic_script(str(binary), str(project), "void main() {}")
+
+    assert result.ok is False
+    assert result.stdout == ""
+    assert result.stderr == "boom"
+    assert "boom" in result.error
+
+
+def test_run_minic_script_reports_timeout(tmp_path):
+    binary = tmp_path / "ArmorPaint.exe"
+    binary.write_text("")
+    project = tmp_path / "project.arm"
+    project.write_text("")
+
+    with patch("armorpaint_mcp.runner.subprocess.run",
+               side_effect=subprocess.TimeoutExpired(cmd="x", timeout=5.0)):
+        result = run_minic_script(str(binary), str(project), "void main() {}",
+                                  timeout_s=5.0)
 
     assert result.ok is False
     assert "timed out after 5.0s" in result.error

@@ -81,6 +81,67 @@ def run_api(binary: str, project: str, timeout_s: float = DEFAULT_TIMEOUT_S) -> 
     return ApiResult(ok=True, text=proc.stdout)
 
 
+@dataclass
+class ScriptResult:
+    ok: bool
+    stdout: str
+    stderr: str
+    error: str | None = None
+
+
+def run_minic_script(binary: str, project: str, script_text: str,
+                     timeout_s: float = DEFAULT_TIMEOUT_S) -> ScriptResult:
+    """Run `script_text` (minic/.c source) against `project` via ArmorPaint's
+    `--script` flag, then let the process exit on its own.
+
+    Unlike export_textures/run_procedural_material, this launches WITH
+    --background and needs no poll-and-terminate: confirmed empirically
+    (2026-09-16) that --background + --script against a REAL opened project
+    self-exits cleanly (~1-2s) and runs the script correctly (a
+    script_fill_layer()+export_texture_run() script produced real output
+    files). This is NOT the same combination Amendment 1 found broken --
+    that was --background + --export-textures, where iron_stop() could race
+    ahead of a deferred export. Here, args_run_script's minic_eval() runs
+    synchronously in the same frame callback, and iron_stop() is only
+    scheduled a full frame after minic_eval() has already returned -- see
+    paint/sources/args.c's args_run_script/args_run_script_stop.
+
+    IMPORTANT: minic gives no diagnostic signal for a script runtime error --
+    confirmed empirically that calling an undefined function exits 0 with
+    empty stdout/stderr, identical to a script that ran perfectly (the same
+    kind of minic silent-failure Phase 2's spiking found for curated struct
+    access -- see the design spec's Amendment 2). So ok=True here means only
+    "the ArmorPaint process completed" -- it is NOT proof the script did what
+    it was supposed to do. Callers should verify results independently (e.g.
+    check that expected output files appeared, or call inspect_project
+    afterward).
+
+    Never raises for a normal script-didn't-work failure -- that's
+    ScriptResult(ok=False, ...)."""
+    fd, script_path = tempfile.mkstemp(suffix=".c")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(script_text)
+
+        try:
+            proc = subprocess.run(
+                [binary, project, "--background", "--script", script_path],
+                capture_output=True, text=True, timeout=timeout_s,
+            )
+        except subprocess.TimeoutExpired:
+            return ScriptResult(ok=False, stdout="", stderr="", error=(
+                f"'--script' timed out after {timeout_s}s -- outcome "
+                f"uncertain, inspect the project directly"))
+    finally:
+        os.unlink(script_path)
+
+    if proc.returncode != 0:
+        detail = f": {proc.stderr.strip()}" if proc.stderr and proc.stderr.strip() else ""
+        return ScriptResult(ok=False, stdout=proc.stdout, stderr=proc.stderr,
+                            error=f"'--script' exited {proc.returncode}{detail}")
+    return ScriptResult(ok=True, stdout=proc.stdout, stderr=proc.stderr)
+
+
 def _presets_dir(binary: str) -> str:
     """The ArmorPaint install's export-preset directory, next to `binary`.
     Single source of truth for both listing presets and reading one, so the
