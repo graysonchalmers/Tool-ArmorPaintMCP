@@ -1,6 +1,6 @@
 # 🧭 Session Handoff — Tool-ArmorPaintMCP
 
-_Last updated: 2026-09-16_
+_Last updated: 2026-09-16 (wrap-up)_
 
 > The baton. Written by `wrap-up` at session end, read by `pickup` at session start.
 
@@ -75,32 +75,94 @@ this session):
 - **Clean-clone install check** (this phase's own stated gate from
   `docs/PLAN.md`): cloned the worktree's committed tree to a scratch temp
   dir (not the `main`-tracking `C:\Projects-local\Tool-ArmorPaintMCP`
-  checkout, since Phase 4's commits aren't merged to `main` yet — cloning
-  from there would have tested pre-Phase-4 code), fresh `python -m venv`,
-  `pip install -e .` succeeded cleanly (built the editable wheel, all deps
-  resolved), `ap-mcp --version` and `--help` both exit 0. `ap-mcp --check`
-  correctly reported `[FAIL] AP_BINARY: not set` (exit 1) since the fresh
-  clone has no `.env` — the honest, expected result for a config-less clone,
-  not a defect in the check itself. Scratch dir removed after.
+  checkout, since Phase 4's commits weren't merged to `main` yet at that
+  point — cloning from there would have tested pre-Phase-4 code), fresh
+  `python -m venv`, `pip install -e .` succeeded cleanly (built the
+  editable wheel, all deps resolved), `ap-mcp --version` and `--help` both
+  exit 0. `ap-mcp --check` correctly reported `[FAIL] AP_BINARY: not set`
+  (exit 1) since the fresh clone has no `.env` — the honest, expected
+  result for a config-less clone, not a defect in the check itself.
+  Scratch dir removed after.
+
+Then the **final whole-branch review** (opus, the most capable model, per
+this project's established convention) found 1 Critical + 3 Important
+findings none of the five per-task reviews caught, since each was scoped to
+one task's diff:
+
+- **Critical:** `run_script` can call minic's `project_save(0)` and
+  silently overwrite the caller's `.arm` project in place — demonstrated
+  empirically (fixture file size/md5 changed after a
+  `script_fill_layer(); project_save(0);` script ran with `ok=True`, no
+  warning). The plan's Global Constraints section had affirmatively (and
+  wrongly) claimed `run_script` "never saves a project... no
+  in-place-mutation risk." **Ruling:** fix is documentation-only, not an
+  architecture change — no copy-by-default, no opt-in flag. The design
+  spec explicitly says this tool must not be gated behind an extra flag,
+  and a flag couldn't be enforced anyway since minic scripts can't be
+  statically analyzed for whether they'll call `project_save()` before
+  running them; forcing copy-by-default would also defeat the tool's
+  actual purpose (acting on the real project) for exactly the cases it
+  exists to serve.
+- **Important:** `stdout`/`stderr` are structurally always empty on this
+  Windows build — ArmorPaint's script-facing console functions
+  (`console_log` etc.) write via `WriteConsoleW` directly to the console
+  handle, which `subprocess.run(capture_output=True)`'s pipe redirection
+  cannot capture (verified empirically; different from `run_api`, which
+  uses plain `printf` and works fine).
+- **Important:** the docstring's "Bounded by AP_ALLOWED_ROOTS when set"
+  overclaimed — only the `project` path is bounded, not what the script
+  body itself does.
+- **Important:** no caller-facing `timeout_s` override existed, pinning an
+  inherently unbounded, caller-defined workload to the 30s default.
+
+One fix wave (`f764464`) closed all four, corrected the false claim
+everywhere it appeared (plan, `server.py` docstring, `STATUS.md`,
+double-checked `README.md` wasn't affirmatively claiming safety either),
+added the honest `WARNING`/`NOTE` docstring language, fixed the
+`AP_ALLOWED_ROOTS` sentence, and added `timeout_s: float = 30.0` as a real
+parameter (forwarded to `run_minic_script`, covered by a new unit test).
+Scoped re-review: all four ADDRESSED, no new breakage. 4 Minor findings
+parked (see "Open questions" below) — none load-bearing.
+
+Verification re-run fresh after the fix wave and again on the actual
+**merged `main` tree** (never trust a pre-merge green): unit **88 passed, 0
+failed, 6 deselected**; integration **6 passed, 0 failed**; smoke **6/6,
+exit 0**.
+
+**Merged and pushed.** `git merge --no-ff worktree-worktree-phase4-run-script`
+into `main` (a real merge commit, `0c61b94`), worktree and branch removed,
+pushed to `origin` on Grayson's explicit go-ahead — `origin/main` is
+confirmed `0  0` against local `HEAD`.
 
 ## ▶️ Next concrete step
 
 **Phase 4 was the last phase in `docs/PLAN.md` — there is no Phase 5.**
-This worktree/branch still needs to be finished (merged into `main` and
-pushed, following the same `superpowers:finishing-a-development-branch`
-path Phases 1-3 used) as the immediate mechanical step. After that lands,
-the natural next work is one of:
+v1's full tool surface is shipped, merged, and pushed. The natural next
+work is one of:
 
-- **The 4 deferred Minor findings from Phase 3's final review**, still open
-  and not yet re-ledgered anywhere durable: stdout encoding in
-  `runner.run_api` (locale-encoding decode could raise
-  `UnicodeDecodeError` on non-ASCII object/material names), `blend_modes()`
-  parse failure currently aborts the whole `inspect_project` read
-  (degrading to `blending: None` would be kinder), `catalog.scene_objects`'s
-  error convention differs from its two siblings (returns `[]` silently
-  instead of raising `CatalogError`), and a repeated 4-key failure-dict
-  literal in `server.py` that could drift. None are urgent — a cheap
-  cleanup pass, not a new phase.
+- **A consolidated Minor-findings cleanup pass**, folding together two
+  overlapping sets that were each deferred at their own final review and
+  never re-ledgered anywhere durable:
+  - *From Phase 3's final review:* stdout encoding in `runner.run_api`
+    (locale-encoding decode could raise `UnicodeDecodeError` on non-ASCII
+    object/material names), `blend_modes()` parse failure currently aborts
+    the whole `inspect_project` read (degrading to `blending: None` would
+    be kinder), `catalog.scene_objects`'s error convention differs from its
+    two siblings (returns `[]` silently instead of raising `CatalogError`).
+  - *From Phase 4's final review:* the `script_path` → inline-`script`
+    spec deviation was never logged in `STATUS.md`'s Deviations table; no
+    real-binary integration test exists for `run_script`'s timeout path
+    (only mocked `TimeoutExpired` — the controller manually verified the
+    real path is correct during review, so this is a coverage gap, not a
+    latent bug); the timeout-discards-partial-output item is moot now that
+    stdout/stderr are documented as structurally empty anyway.
+  - *Spans both phases:* the repeated 4-key failure-dict literal in
+    `server.py` (flagged in Phase 3, and the same pattern got duplicated
+    again by `run_script` in Phase 4 — now three call sites echoing the
+    same shape) and the `isfile`/`.arm`-extension guard duplicated between
+    `inspect_project` and `run_script`. A shared helper for both would
+    close two items at once.
+  None are urgent — a cheap cleanup pass, not a new phase.
 - **Live mode** — deferred, not rejected, per the design spec's "Deferred:
   live mode" section (two options already named there, neither chosen).
   Revisit only once there's an actual concrete need for interactive
@@ -111,21 +173,25 @@ the natural next work is one of:
 - Live mode (deferred, not rejected) — two options named in the spec, neither
   chosen; revisit only once batch mode is solid and live mode is actually
   wanted.
-- The 4 deferred Minor findings above — worth their own small cleanup task,
-  or picked up opportunistically the next time one of those files is
-  touched for an unrelated reason?
+- The consolidated Minor-findings list above (7 items across both phases,
+  2 of them overlapping into a single shared-helper fix) — worth its own
+  small cleanup task, or picked up opportunistically the next time one of
+  those files is touched for an unrelated reason?
 
 ## 🗂️ Changed this session
 
-- Still on the isolated worktree/branch `worktree-worktree-phase4-run-script`
-  — **not yet merged to `main`**. Merging is the immediate next mechanical
-  step (see "Next concrete step" above), not done as part of this task.
+- Merged to `main` (`0c61b94`, real merge commit) and pushed to `origin` —
+  confirmed `0  0` sync. Worktree/branch (`worktree-worktree-phase4-run-script`)
+  removed after the merge.
 - Files this session: `src/armorpaint_mcp/runner.py` (`run_minic_script`),
-  `src/armorpaint_mcp/server.py` (`run_script` tool registration),
-  `tests/test_runner.py`, `tests/test_server.py`,
+  `src/armorpaint_mcp/server.py` (`run_script` tool registration +
+  `timeout_s` param + honest-mutation/stdout/AP_ALLOWED_ROOTS docstring
+  fixes), `tests/test_runner.py`, `tests/test_server.py`,
   `tests/test_run_script_integration.py` (new), `smoke/smoke.ps1` (new
   probe), `docs/superpowers/plans/2026-09-16-phase4-run-script.md` (new),
-  `README.md`, `pyproject.toml`, `STATUS.md`, `HANDOFF.md`.
+  `README.md`, `pyproject.toml`, `STATUS.md`, `HANDOFF.md`. Also logged this
+  session to `_agent-commons\log\2026-09-16-claude-code-armorpaint-mcp-phase4-run-script.md`
+  (Skills-Core repo, committed and pushed separately via `Push-Repo`).
 - Decisions (+ why): launched `run_minic_script` **with** `--background`
   (a departure from Phase 1-2's runner functions, which deliberately omit
   it) after confirming empirically that `--background` + `--script` against
@@ -135,11 +201,15 @@ the natural next work is one of:
   phantom-default-project guard to `run_script` proactively at
   implementation time (Task 2) instead of waiting for a review cycle to
   catch it, since Phase 3's final review had already established the
-  pattern; for the clean-clone check (this task), cloned from the worktree
+  pattern; for the clean-clone check (Task 5), cloned from the worktree
   itself rather than the brief's literal `C:\Projects-local\Tool-ArmorPaintMCP`
-  path, since Phase 4's commits live only on this unmerged branch and
-  cloning the `main`-tracking checkout would have silently tested
-  pre-Phase-4 code.
+  path, since Phase 4's commits lived only on the unmerged branch at that
+  point and cloning the `main`-tracking checkout would have silently tested
+  pre-Phase-4 code; ruled the final review's Critical finding (silent
+  in-place project mutation) should be fixed by correcting the false docs,
+  not by adding copy-by-default/opt-in gating, per the design spec's
+  explicit "not gated behind an extra opt-in flag" framing for this
+  specific tool.
 
 ---
 
@@ -176,6 +246,21 @@ the natural next work is one of:
 - Updated `STATUS.md` (Phase 4 gate row + detail table, `Open phase` set to
   "none") and this file to reflect v1's tool surface being complete, and
   that Phase 4 was the last phase in the plan — no Phase 5 exists.
+- Final whole-branch review (opus) found 1 Critical + 3 Important findings
+  the five per-task reviews missed: `run_script` can call minic's
+  `project_save()` and silently overwrite the caller's project in place,
+  contradicting the plan's false "never saves a project" claim; stdout/
+  stderr are structurally always empty on this Windows build
+  (`WriteConsoleW`, not pipe-capturable); an `AP_ALLOWED_ROOTS` docstring
+  overclaim; and no caller-facing timeout override. Ruled the Critical fix
+  should be documentation-only (no copy-by-default, no opt-in flag), per
+  the design spec's explicit framing for this specific tool. One fix wave
+  closed all four; scoped re-review came back clean, 4 Minor findings
+  parked (see "Next concrete step").
+- Merged to `main` (`0c61b94`, real merge commit), re-verified green on the
+  merged tree (88 unit, 6 integration, 6/6 smoke), removed the worktree and
+  branch, pushed to `origin` on Grayson's go-ahead, confirmed `0  0` sync.
+  Logged the session to `_agent-commons\log\` (Skills-Core repo).
 
 ### 2026-09-16 — better gallery screenshots + Phase 3 (`inspect_project`)
 - Grayson opened the session asking for better debug/smoke examples so the
