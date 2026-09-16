@@ -5,6 +5,8 @@ from mcp.server.mcpserver import MCPServer
 from armorpaint_mcp import __version__
 from armorpaint_mcp.config import load_config, require_valid
 from armorpaint_mcp.doctor import run_check
+from armorpaint_mcp.paths import ensure_within_roots, PathNotAllowed
+from armorpaint_mcp.runner import export_textures, list_export_presets
 
 # Startup is lazy: importing this module must NOT validate config, so
 # `ap-mcp --check` / `--version` work even when config is broken (the exact
@@ -13,9 +15,6 @@ _cfg = None
 
 mcp = MCPServer("armorpaint-mcp")
 
-# Tools land here phase by phase (see docs/PLAN.md) -- Phase 0 ships the
-# harness only, deliberately no tools yet.
-
 
 def _ensure_ready():
     global _cfg
@@ -23,6 +22,36 @@ def _ensure_ready():
         _cfg = load_config()
         require_valid(_cfg)
     return _cfg
+
+
+def reexport_project(project: str, preset: str, output_dir: str) -> dict:
+    """Re-export an existing .arm project's textures at a given preset,
+    using ArmorPaint's native --export-textures flag (PNG). No resolution
+    parameter: ArmorPaint has no CLI flag or confirmed scripting call for it
+    in this version -- see docs/PLAN.md's Phase 1 section. `preset` must be
+    one of the names returned by listing <ArmorPaint install>/data/export_presets/*.json
+    (this checkout has: base_color, generic, minecraft_mer, specular,
+    unigine, unity, unreal, xplane). Bounded by AP_ALLOWED_ROOTS when set.
+    Returns {"ok": bool, "files": [str] | None, "error": str | None}."""
+    cfg = load_config()
+
+    available = list_export_presets(cfg.binary)
+    if preset not in available:
+        return {"ok": False, "files": None,
+                "error": f"unknown preset '{preset}'; available: {', '.join(available)}"}
+
+    try:
+        project = ensure_within_roots(project, cfg.allowed_roots)
+        output_dir = ensure_within_roots(output_dir, cfg.allowed_roots)
+    except PathNotAllowed as exc:
+        return {"ok": False, "files": None, "error": str(exc)}
+
+    result = export_textures(cfg.binary, project, "png", preset, output_dir)
+    return {"ok": result.ok, "files": result.files if result.ok else None,
+            "error": result.error}
+
+
+mcp.tool()(reexport_project)
 
 
 _USAGE = (
