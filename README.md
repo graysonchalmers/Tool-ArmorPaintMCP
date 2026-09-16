@@ -11,7 +11,7 @@ source, unlike the reference implementation it started from) is in
 
 ## Status
 
-**Pre-alpha, Phase 1 (`reexport_project` shipped).** See [docs/PLAN.md](docs/PLAN.md)
+**Pre-alpha, Phase 2 (`create_procedural_material` shipped).** See [docs/PLAN.md](docs/PLAN.md)
 for the phase plan and [STATUS.md](STATUS.md) for the gate ledger.
 
 ## Gallery
@@ -28,9 +28,11 @@ exported, not visual richness. Same project, two export presets:
 |:--:|:--:|
 | ![generic preset base color export](docs/images/gallery/generic_base.png) | ![unreal preset packed export](docs/images/gallery/unreal_packed.png) |
 
-Richer, actually-painted example output is a natural follow-up once a later
-phase adds baking or painting — tracked as an open item, not blocking this
-phase's gate.
+Real procedural output from `create_procedural_material` (Phase 2) — a
+checker-pattern node graph built, rendered, and exported in a single
+ArmorPaint process, on the default cube-bevel primitive:
+
+![procedural checker material, base color export](docs/images/gallery/procedural_checker_base.png)
 
 ## How it works
 
