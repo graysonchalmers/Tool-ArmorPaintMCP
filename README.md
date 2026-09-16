@@ -39,6 +39,18 @@ ArmorPaint process, on the default cube-bevel primitive:
 
 ![procedural checker material, base color export](docs/images/gallery/procedural_checker_base.png)
 
+ArmorPaint's minic scripting surface reaches further than the two node types
+`create_procedural_material` ships (a deliberate v1 scope decision, not a
+platform limit — see [docs/PLAN.md](docs/PLAN.md) Phase 2). `TEX_NOISE` and
+`TEX_VORONOI` both work the same way through the same `script_material_*`
+calls; [scripts/generate_gallery.py](scripts/generate_gallery.py) renders
+them (hand-written minic, outside the shipped tool, for example imagery
+only) to show what the underlying engine is actually capable of:
+
+| Noise | Voronoi |
+|:--:|:--:|
+| ![procedural noise material, base color export](docs/images/gallery/procedural_noise_base.png) | ![procedural voronoi material, base color export](docs/images/gallery/procedural_voronoi_base.png) |
+
 ## How it works
 
 ArmorPaint ships real, unpatched CLI automation:
