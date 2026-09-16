@@ -77,6 +77,30 @@ def test_generate_script_rejects_non_numeric_scale():
         generate_script({"type": "checker", "params": {"scale": "big"}}, "C:/out")
 
 
+def test_generate_script_rejects_scale_too_large_for_float():
+    with pytest.raises(NodeSpecError, match="scale is too large to convert to a float"):
+        generate_script({"type": "checker", "params": {"scale": 10 ** 400}}, "C:/out")
+
+
+def test_generate_script_rejects_non_finite_scale():
+    with pytest.raises(NodeSpecError, match="scale must be a finite number"):
+        generate_script({"type": "checker", "params": {"scale": float("nan")}},
+                         "C:/out")
+
+
+def test_generate_script_rejects_infinite_scale():
+    with pytest.raises(NodeSpecError, match="scale must be a finite number"):
+        generate_script({"type": "checker", "params": {"scale": float("inf")}},
+                         "C:/out")
+
+
+def test_generate_script_rejects_non_finite_color_component():
+    with pytest.raises(NodeSpecError, match="color1 must be a finite number"):
+        generate_script(
+            {"type": "checker", "params": {"color1": [float("nan"), 0.0, 0.0]}},
+            "C:/out")
+
+
 def test_generate_script_normalizes_windows_backslashes():
     script = generate_script({"type": "solid"}, r"C:\out\dir")
 

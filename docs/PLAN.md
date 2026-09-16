@@ -80,10 +80,14 @@ exist in this build. In order:
    single-process path is fully sufficient.
 
 **Scope:** one new tool generates a minic script from a small, whitelisted
-node-graph spec (node type + params + connections — chosen from minic's
-real registered node set: `TEX_CHECKER`, `RGB`, `TEX_NOISE`,
-`TEX_VORONOI`, `TEX_GRADIENT`, `TEX_WAVE`, `MIX_RGB`, etc.), writes it to a
-temp file, launches ArmorPaint with `--script <file>` (no `--background`,
+node-graph spec (node type + params + connections). **Scope is deliberately
+narrow (YAGNI): v1 supports exactly two node types, `"checker"`
+(`TEX_CHECKER`) and `"solid"` (`RGB`)** — a general multi-node graph DSL is
+future scope, not this phase's job. minic's real registered node set is
+much broader (`TEX_NOISE`, `TEX_VORONOI`, `TEX_GRADIENT`, `TEX_WAVE`,
+`MIX_RGB`, etc.) and is a possible future expansion, not something v1
+exposes. The tool writes the generated script to a temp file, launches
+ArmorPaint with `--script <file>` (no `--background`,
 per Phase 1's established GUI-process-plus-poll pattern), and the script
 itself does project setup → build graph → `script_fill_layer()` →
 `export_texture_run()` in one process before exiting. Also exposes

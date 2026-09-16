@@ -149,6 +149,28 @@ def test_create_procedural_material_rejects_path_outside_allowed_roots(tmp_path)
     assert "allowed roots" in result["error"]
 
 
+def test_create_procedural_material_rejects_non_generic_preset(tmp_path):
+    """export_texture_run() has no preset argument -- the single-process
+    script flow can only ever export whatever preset last configured the
+    export box, which is always 'generic' in this headless flow. Requesting
+    anything else must be rejected up front, not silently mis-exported."""
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.list_export_presets",
+               return_value=["generic", "unreal"]), \
+         patch("armorpaint_mcp.server.run_procedural_material") as mock_run:
+        mock_cfg.return_value.binary = str(tmp_path / "ArmorPaint.exe")
+        mock_cfg.return_value.allowed_roots = []
+        result = create_procedural_material(
+            node_spec={"type": "checker"},
+            output_dir=str(tmp_path / "out"),
+            preset="unreal",
+        )
+
+    assert result["ok"] is False
+    assert "only supports the 'generic' preset" in result["error"]
+    mock_run.assert_not_called()
+
+
 def test_create_procedural_material_rejects_invalid_node_spec(tmp_path):
     with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
          patch("armorpaint_mcp.server.list_export_presets", return_value=["generic"]):

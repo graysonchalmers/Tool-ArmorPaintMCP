@@ -72,14 +72,28 @@ def create_procedural_material(node_spec: dict, output_dir: str,
     one ArmorPaint process (build the graph, render it into the paint
     layer, export): saving to .arm and exporting separately does not
     preserve the rendered pixels on this build -- see docs/PLAN.md's
-    Phase 2 section. Bounded by AP_ALLOWED_ROOTS when set. Returns
-    {"ok": bool, "files": [str] | None, "error": str | None}."""
+    Phase 2 section. Only the 'generic' preset is actually supported (see
+    the in-function check below for why). Bounded by AP_ALLOWED_ROOTS when
+    set. Returns {"ok": bool, "files": [str] | None, "error": str | None}."""
     cfg = _ensure_ready()
 
     available = list_export_presets(cfg.binary)
     if preset not in available:
         return {"ok": False, "files": None,
                 "error": f"unknown preset '{preset}'; available: {', '.join(available)}"}
+
+    if preset != "generic":
+        return {"ok": False, "files": None,
+                "error": (f"create_procedural_material only supports the 'generic' "
+                          f"preset: the single-process script flow calls "
+                          f"export_texture_run(), which has no preset argument and "
+                          f"no minic setter exists for it -- it always exports "
+                          f"whatever preset last configured the export box, which "
+                          f"in this headless flow is always ArmorPaint's own "
+                          f"'generic' fallback. Requesting '{preset}' would either "
+                          f"time out waiting for files that never arrive, or (for "
+                          f"a preset whose files are a strict subset of generic's) "
+                          f"silently report success for the wrong export.")}
 
     try:
         output_dir = ensure_within_roots(output_dir, cfg.allowed_roots)

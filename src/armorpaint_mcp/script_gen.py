@@ -15,21 +15,41 @@ save-then-reexport split silently loses the rendered pixels.
 """
 
 
+import math
+
+
 class NodeSpecError(Exception):
     """`node_spec` is malformed or requests an unsupported node type."""
+
+
+def _finite_float(name: str, value) -> float:
+    """Convert `value` to a float that is safe to format directly into a
+    minic script literal. Two failure modes get turned into NodeSpecError
+    instead of escaping uncaught: a Python int too large for `float()`
+    raises OverflowError, and NaN/Infinity convert fine but produce an
+    invalid C literal that silently breaks the generated script (surfacing
+    much later as a confusing export timeout)."""
+    try:
+        result = float(value)
+    except OverflowError:
+        raise NodeSpecError(
+            f"{name} is too large to convert to a float: {value!r}") from None
+    if not math.isfinite(result):
+        raise NodeSpecError(f"{name} must be a finite number, got {value!r}")
+    return result
 
 
 def _number(name: str, value) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise NodeSpecError(f"{name} must be a number, got {value!r}")
-    return float(value)
+    return _finite_float(name, value)
 
 
 def _color3(name: str, value) -> tuple[float, float, float]:
     if (not isinstance(value, (list, tuple)) or len(value) != 3
             or any(isinstance(c, bool) or not isinstance(c, (int, float)) for c in value)):
         raise NodeSpecError(f"{name} must be a [r, g, b] list of 3 numbers, got {value!r}")
-    return tuple(float(c) for c in value)
+    return tuple(_finite_float(name, c) for c in value)
 
 
 def _checker_node_lines(params: dict) -> list[str]:
