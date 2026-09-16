@@ -10,6 +10,7 @@ from armorpaint_mcp.runner import (
     export_textures,
     list_export_presets,
     preset_texture_names,
+    run_procedural_material,
 )
 
 # The two real presets these tests lean on, copied from an actual ArmorPaint
@@ -387,3 +388,121 @@ def test_export_textures_builds_correct_argv(tmp_path):
     assert captured["args"] == [
         binary, project, "--export-textures", "png", "generic", str(output_dir),
     ]
+
+
+def test_run_procedural_material_builds_correct_argv_and_no_background(tmp_path):
+    binary = _install(tmp_path, {"generic": GENERIC_NAMES})
+    output_dir = str(tmp_path / "out")
+
+    mock_proc = MagicMock()
+    mock_proc.communicate.return_value = ("", "")
+    captured = {}
+
+    def fake_popen(args, **kwargs):
+        captured["args"] = args
+        return mock_proc
+
+    with patch("armorpaint_mcp.runner.subprocess.Popen", side_effect=fake_popen):
+        run_procedural_material(binary, "void main() {}", output_dir, "generic",
+                                 timeout_s=0.2)
+
+    assert captured["args"][0] == binary
+    assert "--script" in captured["args"]
+    assert "--background" not in captured["args"]
+    script_path = captured["args"][captured["args"].index("--script") + 1]
+    assert not os.path.exists(script_path), "temp script must be cleaned up"
+
+
+def test_run_procedural_material_writes_the_given_script_text(tmp_path):
+    binary = _install(tmp_path, {"generic": GENERIC_NAMES})
+    output_dir = str(tmp_path / "out")
+    written = {}
+
+    mock_proc = MagicMock()
+    mock_proc.communicate.return_value = ("", "")
+
+    def fake_popen(args, **kwargs):
+        script_path = args[args.index("--script") + 1]
+        with open(script_path, encoding="utf-8") as fh:
+            written["content"] = fh.read()
+        return mock_proc
+
+    with patch("armorpaint_mcp.runner.subprocess.Popen", side_effect=fake_popen):
+        run_procedural_material(binary, "void main() { /* marker */ }",
+                                 output_dir, "generic", timeout_s=0.2)
+
+    assert written["content"] == "void main() { /* marker */ }"
+
+
+def test_run_procedural_material_reports_success_when_files_appear(tmp_path):
+    binary = _install(tmp_path, {"generic": GENERIC_NAMES})
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+
+    mock_proc = MagicMock()
+    mock_proc.communicate.return_value = ("", "")
+
+    def fake_popen(args, **kwargs):
+        def write_files():
+            for name in GENERIC_NAMES:
+                (output_dir / f"untitled_{name}.png").write_bytes(b"fake png")
+        timer = threading.Timer(0.3, write_files)
+        timer.daemon = True
+        timer.start()
+        return mock_proc
+
+    with patch("armorpaint_mcp.runner.subprocess.Popen", side_effect=fake_popen):
+        result = run_procedural_material(binary, "void main() {}", str(output_dir),
+                                          "generic", timeout_s=5.0)
+
+    assert result.ok is True, result.error
+    assert result.files == [str(output_dir / f"untitled_{n}.png")
+                            for n in GENERIC_NAMES]
+    mock_proc.terminate.assert_called_once()
+
+
+def test_run_procedural_material_reports_failure_when_no_files_appear(tmp_path):
+    binary = _install(tmp_path, {"generic": GENERIC_NAMES})
+    output_dir = str(tmp_path / "out")
+
+    mock_proc = MagicMock()
+    mock_proc.communicate.return_value = ("", "")
+    with patch("armorpaint_mcp.runner.subprocess.Popen", return_value=mock_proc):
+        result = run_procedural_material(binary, "void main() {}", output_dir,
+                                          "generic", timeout_s=0.3)
+
+    assert result.ok is False
+    assert result.files == []
+    assert "untitled_base.png" in result.error
+
+
+def test_run_procedural_material_cleans_up_tempfile_even_on_failure(tmp_path):
+    binary = _install(tmp_path, {"generic": GENERIC_NAMES})
+    output_dir = str(tmp_path / "out")
+
+    mock_proc = MagicMock()
+    mock_proc.communicate.return_value = ("", "")
+    captured = {}
+
+    def fake_popen(args, **kwargs):
+        captured["script_path"] = args[args.index("--script") + 1]
+        return mock_proc
+
+    with patch("armorpaint_mcp.runner.subprocess.Popen", side_effect=fake_popen):
+        run_procedural_material(binary, "void main() {}", output_dir, "generic",
+                                 timeout_s=0.2)
+
+    assert not os.path.exists(captured["script_path"])
+
+
+def test_run_procedural_material_fails_before_launching_for_unknown_preset(tmp_path):
+    binary = _install(tmp_path, {"generic": GENERIC_NAMES})
+    output_dir = str(tmp_path / "out")
+
+    with patch("armorpaint_mcp.runner.subprocess.Popen") as mock_popen:
+        result = run_procedural_material(binary, "void main() {}", output_dir,
+                                          "no_such_preset", timeout_s=0.2)
+
+    assert result.ok is False
+    assert "could not determine which files preset 'no_such_preset' exports" in result.error
+    mock_popen.assert_not_called()

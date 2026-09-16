@@ -26,6 +26,7 @@ import glob
 import json
 import os
 import subprocess
+import tempfile
 import time
 from dataclasses import dataclass
 
@@ -214,3 +215,44 @@ def export_textures(binary: str, project: str, texture_type: str, preset: str,
         stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
     )
     return _poll_and_terminate(proc, expected, before, timeout_s, preset, output_dir)
+
+
+def run_procedural_material(binary: str, script_text: str, output_dir: str,
+                            preset: str, timeout_s: float = DEFAULT_TIMEOUT_S) -> ExportResult:
+    """Launch ArmorPaint with `script_text` as a --script file (no
+    --background: untested with real GPU rendering in that mode, and this
+    project's convention is to avoid it for anything that renders or
+    exports -- see the module docstring) and export at `preset`.
+
+    This flow never saves a project, so ArmorPaint names every file after
+    "untitled" (export_texture.c falls back to that name when
+    ui_files_filename is empty) -- expected_output_files is called with a
+    synthetic "untitled.arm" project name so the derived filenames match
+    exactly what ArmorPaint will actually write.
+
+    Returns ExportResult(ok, files, error). Never raises for a normal
+    export-didn't-happen failure."""
+    os.makedirs(output_dir, exist_ok=True)
+
+    try:
+        expected = expected_output_files(binary, "untitled.arm", "png", preset,
+                                          output_dir)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        return ExportResult(ok=False, files=[], error=(
+            f"could not determine which files preset '{preset}' exports: {exc}"))
+
+    before = _snapshot(expected)
+
+    fd, script_path = tempfile.mkstemp(suffix=".c")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(script_text)
+
+        proc = subprocess.Popen(
+            [binary, "--script", script_path],
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
+        )
+        return _poll_and_terminate(proc, expected, before, timeout_s, preset,
+                                   output_dir)
+    finally:
+        os.unlink(script_path)
