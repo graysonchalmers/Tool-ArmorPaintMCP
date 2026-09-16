@@ -15,7 +15,7 @@
 | 0 | Scaffold + smoke harness | ✅ 2026-09-15 | `smoke/smoke.ps1`: 3 passed, 0 failed (package imports, `--version`, `--help`) |
 | 1 | reexport_project tool (native export flags, no script) | ✅ 2026-09-15 | tests/test_reexport_integration.py: 1 passed, 5 real PNG files produced from tests/fixtures/sample_project.arm |
 | 2 | `create_procedural_material` tool (single-process script build+fill+export) | ✅ 2026-09-15 | `.venv\Scripts\python.exe -m pytest -q`: 53 passed, 0 failed; `-m integration`: 2 passed (`test_checker_material_produces_a_genuinely_painted_texture` + Phase 1's `test_reexport_project_produces_real_files`, no regression); `smoke/smoke.ps1`: 4/4 passed, exit 0; gallery image `docs/images/gallery/procedural_checker_base.png` (61,764 bytes) visually confirmed by the controller as a genuine checker pattern, not flat gray |
-| 3 | `inspect_project` + dynamic catalog (`list_export_presets` already shipped in Phase 2 as `list_available_presets`) | ⬜ | |
+| 3 | `inspect_project` + dynamic catalog (blend modes; bake types deliberately out of scope -- see Deviations) | ⬜ | |
 | 4 | `run_script` escape hatch + docs/packaging polish | ⬜ | |
 
 ---
@@ -56,6 +56,16 @@
 
 ---
 
+## Current Phase Detail (Phase 3)
+
+| Item / File | State | Notes |
+|---|---|---|
+| `src/armorpaint_mcp/catalog.py` | 🔌 | builds blend-mode list from `--api` output; bake types deliberately out of scope |
+| `src/armorpaint_mcp/runner.py` (`run_api`) | 🔌 | subprocess wrapper for ArmorPaint's `--api` flag |
+| `src/armorpaint_mcp/server.py` (`inspect_project`) | 🔌 | registered as an MCP tool, reads `.arm` metadata via `ArmorPaint.exe <project> --api` |
+
+---
+
 ## Known Issues
 
 | # | Issue | Impact | Workaround / Plan |
@@ -68,4 +78,4 @@
 
 | Date | Deviation | Rationale |
 |---|---|---|
-| | | |
+| 2026-09-15 | `list_export_presets` shipped in Phase 1/2 as a function in `runner.py`, not in `catalog.py` as the design spec's Components table originally described. | Phase 3's own plan (this file's history) chose not to relocate already-tested, working code for a cosmetic-only file-organization match -- see docs/superpowers/plans/2026-09-16-phase3-inspect-project.md's Global Constraints/rationale. |
