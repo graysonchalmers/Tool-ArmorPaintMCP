@@ -48,5 +48,12 @@ if __name__ == "__main__":
     sha = _git(["rev-parse", "HEAD"]); date = _git(["show", "-s", "--format=%cd", "--date=short", "HEAD"])
     stamp = derive_stamp(sha, date, _resolve_version())
     out = HERE.parent / "build-stamp.json"
-    if "--print" in sys.argv: print(stamp["stamp"])
-    else: out.write_text(json.dumps(stamp, indent=2) + "\n", encoding="utf8"); print("[build-stamp]", stamp["stamp"])
+    # Windows consoles are often cp1252, which can't encode the emoji -- write
+    # the real stamp (with emoji) to the JSON file, but keep console output
+    # ASCII-safe so this never crashes on a plain `python build_stamp.py` run.
+    ascii_stamp = f"{stamp['codeword']} \xb7 {stamp['shortSha']} \xb7 {stamp['date']}"
+    if "--print" in sys.argv:
+        print(ascii_stamp)
+    else:
+        out.write_text(json.dumps(stamp, indent=2) + "\n", encoding="utf8")
+        print("[build-stamp] wrote build-stamp.json:", ascii_stamp)
