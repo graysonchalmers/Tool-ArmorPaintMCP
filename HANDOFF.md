@@ -6,19 +6,84 @@ _Last updated: 2026-09-16 (wrap-up)_
 
 ## 🎯 Current state
 
-**Phase 4 (`run_script`) is shipped — v1's tool surface is now complete.**
-All five planned tools are implemented, tested, and gated:
-`reexport_project`, `create_procedural_material` + `list_available_presets`,
-`inspect_project`, and now `run_script` — an escape-hatch tool that hands
-the caller's own minic (.c) source straight to ArmorPaint's `--script` flag
-against an already-open project, for anything the four purpose-built tools
-don't cover. `pyproject.toml`'s classifier moved from Pre-Alpha to Alpha and
-the README got a pass reflecting the complete v1 surface. Design spec:
-[docs/superpowers/specs/2026-09-15-armorpaint-mcp-design.md](docs/superpowers/specs/2026-09-15-armorpaint-mcp-design.md).
-Implementation plan: [docs/PLAN.md](docs/PLAN.md). Phase 4's own plan is
-recorded at [docs/superpowers/plans/2026-09-16-phase4-run-script.md](docs/superpowers/plans/2026-09-16-phase4-run-script.md).
+**v1's tool surface is complete AND its review debt is now closed.** All
+five planned tools (`reexport_project`, `create_procedural_material` +
+`list_available_presets`, `inspect_project`, `run_script`) are shipped,
+tested, and gated — see Phase 4's entry below for that history. This
+session additionally closed the 7 Minor findings parked at the end of
+Phase 3's and Phase 4's final reviews (a cleanup pass, not a new phase —
+`docs/PLAN.md` still has no Phase 5). Merged to `main` (`973a696`, real
+`--no-ff` merge commit) and pushed — `origin/main` confirmed in sync.
+Design spec: [docs/superpowers/specs/2026-09-15-armorpaint-mcp-design.md](docs/superpowers/specs/2026-09-15-armorpaint-mcp-design.md).
+Implementation plan: [docs/PLAN.md](docs/PLAN.md). This session's own plan:
+[docs/superpowers/plans/2026-09-16-minor-findings-cleanup.md](docs/superpowers/plans/2026-09-16-minor-findings-cleanup.md).
 
 ## 📌 Where we stopped
+
+The Minor-findings cleanup pass is done, merged, and pushed. Nothing is
+mid-flight. The project is at a clean, fully-verified stopping point —
+there is no unfinished task to resume.
+
+Executed as a 5-task plan
+(`docs/superpowers/plans/2026-09-16-minor-findings-cleanup.md`) in an
+isolated worktree (`worktree-minor-findings-cleanup`), each task committed
+and reviewed before the next:
+
+- **Task 1** (`d23fb6b`) — hardened `runner.run_api`'s stdout decode
+  (`errors="replace"`) against non-ASCII object/material names that could
+  otherwise raise `UnicodeDecodeError` and lose the whole `--api` result.
+- **Task 2** (`2e75990`) — `catalog.scene_objects` now raises `CatalogError`
+  when the "Scene objects in world space" marker is entirely absent from
+  `--api` output, consistent with its sibling parsers (`extract_project_state`,
+  `blend_modes`) — previously it silently returned `[]`, indistinguishable
+  from a genuinely empty scene. `inspect_project`'s call site moved inside
+  the existing `try/except CatalogError` block so the new exception can
+  never escape uncaught.
+- **Task 3** (`d4bc9b9`) — extracted two shared `server.py` helpers,
+  `_failure(error, *null_fields)` and `_is_arm_project_file(path)`, and
+  refactored all four tool functions to use them — pure refactor, no
+  behavior change (verified: identical test pass count, no error-text
+  changes).
+- **Task 4** (`7401711`) — added a real-binary integration test for
+  `run_script`'s timeout path (`timeout_s=0.01` against the real
+  `ArmorPaint.exe`, forcing a genuine `subprocess.TimeoutExpired`) — only a
+  mocked one existed before.
+- **Task 5** (`d0c4f71`) — `STATUS.md` closeout: a Deviations entry for
+  `run_script(project, script)` taking inline text instead of the
+  originally-spec'd `script_path`, and two Known Issues entries closing
+  findings confirmed **genuinely moot** via real `grep` verification (not
+  just asserted) — `inspect_project` was found to no longer call the
+  parsing `blend_modes()` at all (replaced by the hardcoded
+  `layer_blend_modes()` back in Phase 3), and the "timeout discards partial
+  output" concern is moot since stdout/stderr are already documented as
+  structurally empty on this Windows build.
+
+Final whole-branch review (opus, per this project's own established
+convention) said "Ready to merge: Yes" — found 1 Important finding (an
+unasserted `_failure()` null-field key-set invariant: nothing in the test
+suite actually checked the exact key set at 6 of 10 call sites, so a future
+typo like `_failure(msg, "file")` instead of `"files"` would silently ship)
+plus several Minor findings. One fix wave (`37c9a76`) closed the Important
+finding at 8 of 10 call sites plus 2 doc-accuracy Minors in `STATUS.md`. The
+scoped re-review confirmed no new breakage but found the fix incomplete: 2
+tests (`test_run_script_rejects_nonexistent_project_path` and
+`test_run_script_rejects_path_outside_allowed_roots`) still assert only
+`result["stdout"] is None`, missing the sibling `result["stderr"] is None`
+for the same `_failure(msg, "stdout", "stderr")` call site. Per this
+project's own subagent-driven-development convention, the final review gets
+exactly one fix wave — no second round was spent. Adjudicated and parked:
+the underlying code is already correct at both sites (verified
+independently twice), so this is a real but non-load-bearing test-coverage
+gap, not a live bug. Flagged below as a fine opportunistic pickup.
+
+Verified fresh on the actual merged `main` tree (not just the pre-merge
+branch): `.venv\Scripts\python.exe -m pytest -q` → **95 passed, 0 failed, 9
+deselected**; `-m integration` (real `AP_BINARY`) → **9 passed, 0 failed**;
+`pwsh smoke\smoke.ps1` → **6/6 passed, exit 0**.
+
+---
+
+### Earlier: Phase 4 (`run_script` escape hatch + v1 polish)
 
 Phase 4 (`run_script` + docs/packaging polish) executed as a 5-task plan
 (`docs/superpowers/plans/2026-09-16-phase4-run-script.md`) in an isolated
@@ -136,33 +201,16 @@ confirmed `0  0` against local `HEAD`.
 
 ## ▶️ Next concrete step
 
-**Phase 4 was the last phase in `docs/PLAN.md` — there is no Phase 5.**
-v1's full tool surface is shipped, merged, and pushed. The natural next
-work is one of:
+**Both `docs/PLAN.md`'s 4 phases AND their follow-up review debt are now
+closed.** There is no Phase 5 and no more parked findings. The project is
+at a genuine stopping point — the natural next work is whatever Grayson
+picks up next, not something this codebase is waiting on:
 
-- **A consolidated Minor-findings cleanup pass**, folding together two
-  overlapping sets that were each deferred at their own final review and
-  never re-ledgered anywhere durable:
-  - *From Phase 3's final review:* stdout encoding in `runner.run_api`
-    (locale-encoding decode could raise `UnicodeDecodeError` on non-ASCII
-    object/material names), `blend_modes()` parse failure currently aborts
-    the whole `inspect_project` read (degrading to `blending: None` would
-    be kinder), `catalog.scene_objects`'s error convention differs from its
-    two siblings (returns `[]` silently instead of raising `CatalogError`).
-  - *From Phase 4's final review:* the `script_path` → inline-`script`
-    spec deviation was never logged in `STATUS.md`'s Deviations table; no
-    real-binary integration test exists for `run_script`'s timeout path
-    (only mocked `TimeoutExpired` — the controller manually verified the
-    real path is correct during review, so this is a coverage gap, not a
-    latent bug); the timeout-discards-partial-output item is moot now that
-    stdout/stderr are documented as structurally empty anyway.
-  - *Spans both phases:* the repeated 4-key failure-dict literal in
-    `server.py` (flagged in Phase 3, and the same pattern got duplicated
-    again by `run_script` in Phase 4 — now three call sites echoing the
-    same shape) and the `isfile`/`.arm`-extension guard duplicated between
-    `inspect_project` and `run_script`. A shared helper for both would
-    close two items at once.
-  None are urgent — a cheap cleanup pass, not a new phase.
+- **The one parked test-coverage gap** (see this session's log entry below)
+  — two tests missing a `result["stderr"] is None` assertion on an
+  already-correct `run_script` code path. Trivial, non-urgent; fine to fix
+  opportunistically next time `tests/test_server.py` is open for something
+  else, or as its own 5-minute task.
 - **Live mode** — deferred, not rejected, per the design spec's "Deferred:
   live mode" section (two options already named there, neither chosen).
   Revisit only once there's an actual concrete need for interactive
@@ -173,47 +221,71 @@ work is one of:
 - Live mode (deferred, not rejected) — two options named in the spec, neither
   chosen; revisit only once batch mode is solid and live mode is actually
   wanted.
-- The consolidated Minor-findings list above (7 items across both phases,
-  2 of them overlapping into a single shared-helper fix) — worth its own
-  small cleanup task, or picked up opportunistically the next time one of
-  those files is touched for an unrelated reason?
+- The parked `_failure()` key-set assertion gap (2 of 10 call sites) — worth
+  its own tiny task, or picked up opportunistically? Not blocking anything.
 
 ## 🗂️ Changed this session
 
-- Merged to `main` (`0c61b94`, real merge commit) and pushed to `origin` —
-  confirmed `0  0` sync. Worktree/branch (`worktree-worktree-phase4-run-script`)
-  removed after the merge.
-- Files this session: `src/armorpaint_mcp/runner.py` (`run_minic_script`),
-  `src/armorpaint_mcp/server.py` (`run_script` tool registration +
-  `timeout_s` param + honest-mutation/stdout/AP_ALLOWED_ROOTS docstring
-  fixes), `tests/test_runner.py`, `tests/test_server.py`,
-  `tests/test_run_script_integration.py` (new), `smoke/smoke.ps1` (new
-  probe), `docs/superpowers/plans/2026-09-16-phase4-run-script.md` (new),
-  `README.md`, `pyproject.toml`, `STATUS.md`, `HANDOFF.md`. Also logged this
-  session to `_agent-commons\log\2026-09-16-claude-code-armorpaint-mcp-phase4-run-script.md`
-  (Skills-Core repo, committed and pushed separately via `Push-Repo`).
-- Decisions (+ why): launched `run_minic_script` **with** `--background`
-  (a departure from Phase 1-2's runner functions, which deliberately omit
-  it) after confirming empirically that `--background` + `--script` against
-  an already-open project self-exits cleanly with no poll-and-terminate
-  needed — a different code path from the `--background` + `--export-textures`
-  combination Amendment 1 found racy; applied `inspect_project`'s
-  phantom-default-project guard to `run_script` proactively at
-  implementation time (Task 2) instead of waiting for a review cycle to
-  catch it, since Phase 3's final review had already established the
-  pattern; for the clean-clone check (Task 5), cloned from the worktree
-  itself rather than the brief's literal `C:\Projects-local\Tool-ArmorPaintMCP`
-  path, since Phase 4's commits lived only on the unmerged branch at that
-  point and cloning the `main`-tracking checkout would have silently tested
-  pre-Phase-4 code; ruled the final review's Critical finding (silent
-  in-place project mutation) should be fixed by correcting the false docs,
-  not by adding copy-by-default/opt-in gating, per the design spec's
-  explicit "not gated behind an extra opt-in flag" framing for this
-  specific tool.
+- Merged to `main` (`973a696`, real `--no-ff` merge commit) and pushed to
+  `origin` — confirmed in sync. Worktree/branch
+  (`worktree-minor-findings-cleanup`) removed after the merge.
+- Files this session: `src/armorpaint_mcp/runner.py` (`run_api` decode
+  hardening), `src/armorpaint_mcp/catalog.py` (`scene_objects` error
+  convention), `src/armorpaint_mcp/server.py` (`_failure`/
+  `_is_arm_project_file` shared helpers across all four tools),
+  `tests/test_runner.py`, `tests/test_catalog.py`, `tests/test_server.py`,
+  `tests/test_run_script_integration.py` (new real-timeout test),
+  `STATUS.md` (Deviations entry + 2 Known Issues closures),
+  `docs/superpowers/plans/2026-09-16-minor-findings-cleanup.md` (new),
+  `HANDOFF.md`. Also logged this session to
+  `_agent-commons\log\2026-09-16-claude-code-armorpaint-mcp-minor-findings-cleanup.md`
+  (Skills-Core repo, committed and pushed separately via `Push-Repo.ps1`
+  from inside `_agent-commons` — the shell's cwd resets between tool calls
+  in this harness, so `Set-Location` and the script invocation had to be
+  one single PowerShell call, not two).
+- Decisions (+ why): confirmed via `grep` — not just asserted — that
+  `inspect_project` no longer calls the parsing `blend_modes()` at all
+  before writing STATUS.md's "moot" closure for that finding; ruled the
+  final whole-branch review's one residual gap (2 tests missing a
+  `stderr` assertion after the fix wave) as non-load-bearing and parked it
+  rather than spending a second fix wave, since this project's
+  subagent-driven-development convention grants the final review exactly
+  one fix round.
 
 ---
 
 ## 🕓 Session log
+
+### 2026-09-16 — Minor-findings cleanup pass (5 tasks, closes Phase 3+4 review debt)
+- Picked up with v1's tool surface already shipped/merged/pushed from the
+  prior session; `docs/PLAN.md` had no Phase 5, but HANDOFF's own "Next
+  concrete step" named a consolidated Minor-findings cleanup pass as the
+  natural follow-up. Grayson chose it, then to move on once done.
+- Wrote a 5-task plan and executed it via `superpowers:subagent-driven-development`
+  in an isolated worktree (`worktree-minor-findings-cleanup`, created via
+  the native `EnterWorktree` tool), each task implemented and reviewed by a
+  separate fresh subagent before the next task started. All 5 task reviews
+  came back clean.
+- Investigated (not assumed) two findings that turned out moot on closer
+  reading: `blend_modes()`'s parse-failure risk no longer applies to
+  `inspect_project` at all (Phase 3's own earlier fix had already replaced
+  it with the hardcoded `layer_blend_modes()`), and the
+  timeout-discards-partial-output concern is superseded by the already-documented
+  stdout/stderr-empty fact. Verified both via `grep`/direct code reading
+  before writing the closure into STATUS.md.
+- Final whole-branch review (opus) found 1 Important + several Minor
+  findings; one fix wave closed the Important finding and 2 doc-accuracy
+  Minors. Scoped re-review found the fix wave introduced no new breakage
+  but was itself incomplete at 2 of 10 call sites (a missing `stderr`
+  assertion, not a code defect). Adjudicated and parked per this project's
+  one-fix-wave convention for final reviews, surfaced to Grayson rather
+  than silently dropped.
+- Merged to `main` (`973a696`, real merge commit — an untracked duplicate
+  plan-doc file left over from before the worktree was created had to be
+  removed first, since it would otherwise have blocked the merge), re-verified
+  green on the actual merged tree (95 unit / 9 integration / 6 smoke, all
+  passing), removed the worktree and branch, pushed to `origin` on
+  Grayson's explicit go-ahead.
 
 ### 2026-09-16 — Phase 4 (`run_script` escape hatch + v1 polish)
 - Picked up with Phases 1-3 shipped and pushed to `main`; `docs/PLAN.md`
