@@ -46,6 +46,7 @@ Probe "--help exits 0" { & $Python -m armorpaint_mcp.server --help }
 # talks to (importing the function proves nothing about the MCP layer). No
 # ArmorPaint and no config needed -- registration happens at import time.
 Probe "reexport_project registered as an MCP tool" { & $Python -c "import asyncio; from armorpaint_mcp.server import mcp; names = [t.name for t in asyncio.run(mcp.list_tools())]; assert 'reexport_project' in names, names; print(names)" }
+Probe "inspect_project registered as an MCP tool" { & $Python -c "import asyncio; from armorpaint_mcp.server import mcp; names = [t.name for t in asyncio.run(mcp.list_tools())]; assert 'inspect_project' in names, names; print(names)" }
 
 Write-Host "-- $pass passed, $fail failed --"
 Add-Content -Path $Log -Value "-- $pass passed, $fail failed --"

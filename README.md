@@ -17,7 +17,7 @@ source, unlike the reference implementation it started from) is in
 
 ## Status
 
-**Pre-alpha, Phase 2 (`create_procedural_material` shipped).** See [docs/PLAN.md](docs/PLAN.md)
+**Pre-alpha, Phase 3 (inspect_project shipped).** See [docs/PLAN.md](docs/PLAN.md)
 for the phase plan and [STATUS.md](STATUS.md) for the gate ledger.
 
 ## Gallery
