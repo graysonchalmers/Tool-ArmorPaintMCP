@@ -51,6 +51,36 @@ class ExportResult:
     error: str | None = None
 
 
+@dataclass
+class ApiResult:
+    ok: bool
+    text: str
+    error: str | None = None
+
+
+def run_api(binary: str, project: str, timeout_s: float = DEFAULT_TIMEOUT_S) -> ApiResult:
+    """Run `binary <project> --api` and return its stdout. Unlike
+    export_textures/run_procedural_material, this needs no poll-and-terminate:
+    args_api (paint/sources/args.c) sets args_background = true internally
+    and the process exits on its own once it has printed -- confirmed
+    empirically (2026-09-16), a genuinely simpler path than the export
+    flows. Never raises for a normal failure -- that's ApiResult(ok=False, ...)."""
+    try:
+        proc = subprocess.run(
+            [binary, project, "--api"],
+            capture_output=True, text=True, timeout=timeout_s,
+        )
+    except subprocess.TimeoutExpired:
+        return ApiResult(ok=False, text="",
+                          error=f"'--api' timed out after {timeout_s}s")
+
+    if proc.returncode != 0:
+        detail = f": {proc.stderr.strip()}" if proc.stderr and proc.stderr.strip() else ""
+        return ApiResult(ok=False, text="",
+                          error=f"'--api' exited {proc.returncode}{detail}")
+    return ApiResult(ok=True, text=proc.stdout)
+
+
 def _presets_dir(binary: str) -> str:
     """The ArmorPaint install's export-preset directory, next to `binary`.
     Single source of truth for both listing presets and reading one, so the
