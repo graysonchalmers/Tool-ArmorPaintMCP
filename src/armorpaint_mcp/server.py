@@ -6,7 +6,8 @@ from armorpaint_mcp import __version__
 from armorpaint_mcp.config import load_config, require_valid
 from armorpaint_mcp.doctor import run_check
 from armorpaint_mcp.paths import ensure_within_roots, PathNotAllowed
-from armorpaint_mcp.runner import export_textures, list_export_presets
+from armorpaint_mcp.runner import export_textures, list_export_presets, run_procedural_material
+from armorpaint_mcp.script_gen import generate_script, NodeSpecError
 
 # Startup is lazy: importing this module must NOT validate config, so
 # `ap-mcp --check` / `--version` work even when config is broken (the exact
@@ -60,6 +61,55 @@ def reexport_project(project: str, preset: str, output_dir: str) -> dict:
 
 
 mcp.tool()(reexport_project)
+
+
+def create_procedural_material(node_spec: dict, output_dir: str,
+                               preset: str = "generic") -> dict:
+    """Build a small procedural material -- {"type": "checker", "params":
+    {"scale": float, "color1": [r,g,b], "color2": [r,g,b]}} or {"type":
+    "solid", "params": {"color": [r,g,b]}}, all params optional -- on a
+    fresh default project and export it at `preset`. Everything happens in
+    one ArmorPaint process (build the graph, render it into the paint
+    layer, export): saving to .arm and exporting separately does not
+    preserve the rendered pixels on this build -- see docs/PLAN.md's
+    Phase 2 section. Bounded by AP_ALLOWED_ROOTS when set. Returns
+    {"ok": bool, "files": [str] | None, "error": str | None}."""
+    cfg = _ensure_ready()
+
+    available = list_export_presets(cfg.binary)
+    if preset not in available:
+        return {"ok": False, "files": None,
+                "error": f"unknown preset '{preset}'; available: {', '.join(available)}"}
+
+    try:
+        output_dir = ensure_within_roots(output_dir, cfg.allowed_roots)
+    except PathNotAllowed as exc:
+        return {"ok": False, "files": None, "error": str(exc)}
+
+    try:
+        script_text = generate_script(node_spec, output_dir)
+    except NodeSpecError as exc:
+        return {"ok": False, "files": None, "error": str(exc)}
+
+    result = run_procedural_material(cfg.binary, script_text, output_dir, preset)
+    return {"ok": result.ok, "files": result.files if result.ok else None,
+            "error": result.error}
+
+
+mcp.tool()(create_procedural_material)
+
+
+def list_available_presets() -> dict:
+    """List the export preset names available from the connected
+    ArmorPaint install (<binary_dir>/data/export_presets/*.json) -- for
+    picking a `preset` value for reexport_project or
+    create_procedural_material without guessing. Returns
+    {"presets": [str]}."""
+    cfg = _ensure_ready()
+    return {"presets": list_export_presets(cfg.binary)}
+
+
+mcp.tool()(list_available_presets)
 
 
 _USAGE = (

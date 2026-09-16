@@ -5,7 +5,8 @@ import pytest
 
 from armorpaint_mcp import server
 from armorpaint_mcp.runner import ExportResult
-from armorpaint_mcp.server import mcp, reexport_project
+from armorpaint_mcp.server import (mcp, reexport_project, create_procedural_material,
+                                   list_available_presets)
 
 
 @pytest.fixture(autouse=True)
@@ -111,3 +112,106 @@ def test_reexport_project_is_registered_as_an_mcp_tool():
     assert set(tool.input_schema["properties"]) == {"project", "preset", "output_dir"}
     assert set(tool.input_schema.get("required", [])) == {
         "project", "preset", "output_dir"}
+
+
+def test_create_procedural_material_returns_error_for_unknown_preset(tmp_path):
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.list_export_presets", return_value=["generic"]):
+        mock_cfg.return_value.binary = str(tmp_path / "ArmorPaint.exe")
+        mock_cfg.return_value.allowed_roots = []
+        result = create_procedural_material(
+            node_spec={"type": "checker"},
+            output_dir=str(tmp_path / "out"),
+            preset="not_a_real_preset",
+        )
+
+    assert result["ok"] is False
+    assert "not_a_real_preset" in result["error"]
+    assert "generic" in result["error"]
+
+
+def test_create_procedural_material_rejects_path_outside_allowed_roots(tmp_path):
+    root = tmp_path / "allowed"
+    root.mkdir()
+    outside_dir = tmp_path / "elsewhere" / "out"
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.list_export_presets", return_value=["generic"]):
+        mock_cfg.return_value.binary = str(tmp_path / "ArmorPaint.exe")
+        mock_cfg.return_value.allowed_roots = [str(root)]
+        result = create_procedural_material(
+            node_spec={"type": "checker"},
+            output_dir=str(outside_dir),
+            preset="generic",
+        )
+
+    assert result["ok"] is False
+    assert "allowed roots" in result["error"]
+
+
+def test_create_procedural_material_rejects_invalid_node_spec(tmp_path):
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.list_export_presets", return_value=["generic"]):
+        mock_cfg.return_value.binary = str(tmp_path / "ArmorPaint.exe")
+        mock_cfg.return_value.allowed_roots = []
+        result = create_procedural_material(
+            node_spec={"type": "not_a_real_type"},
+            output_dir=str(tmp_path / "out"),
+            preset="generic",
+        )
+
+    assert result["ok"] is False
+    assert "unsupported node_spec type" in result["error"]
+
+
+def test_create_procedural_material_calls_runner_and_returns_files(tmp_path):
+    output_dir = tmp_path / "out"
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.list_export_presets", return_value=["generic"]), \
+         patch("armorpaint_mcp.server.run_procedural_material") as mock_run:
+        mock_cfg.return_value.binary = str(tmp_path / "ArmorPaint.exe")
+        mock_cfg.return_value.allowed_roots = []
+        mock_run.return_value = ExportResult(
+            ok=True, files=[str(output_dir / "untitled_base.png")])
+
+        result = create_procedural_material(
+            node_spec={"type": "solid", "params": {"color": [1.0, 0.0, 0.0]}},
+            output_dir=str(output_dir), preset="generic")
+
+    assert result == {"ok": True, "files": [str(output_dir / "untitled_base.png")],
+                       "error": None}
+    mock_run.assert_called_once()
+    call_args = mock_run.call_args.args
+    assert call_args[0] == mock_cfg.return_value.binary
+    assert "script_material_create_node_at(\"RGB\"" in call_args[1]
+    assert call_args[2] == str(output_dir)
+    assert call_args[3] == "generic"
+
+
+def test_create_procedural_material_is_registered_as_an_mcp_tool():
+    tools = asyncio.run(mcp.list_tools())
+
+    by_name = {t.name: t for t in tools}
+    assert "create_procedural_material" in by_name, sorted(by_name)
+    tool = by_name["create_procedural_material"]
+    assert set(tool.input_schema["properties"]) == {"node_spec", "output_dir", "preset"}
+    assert set(tool.input_schema.get("required", [])) == {"node_spec", "output_dir"}
+
+
+def test_list_available_presets_returns_presets_dict(tmp_path):
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.list_export_presets",
+               return_value=["generic", "unity"]):
+        mock_cfg.return_value.binary = str(tmp_path / "ArmorPaint.exe")
+
+        result = list_available_presets()
+
+    assert result == {"presets": ["generic", "unity"]}
+
+
+def test_list_available_presets_is_registered_as_an_mcp_tool():
+    tools = asyncio.run(mcp.list_tools())
+
+    by_name = {t.name: t for t in tools}
+    assert "list_available_presets" in by_name, sorted(by_name)
