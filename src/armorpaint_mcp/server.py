@@ -167,6 +167,7 @@ def inspect_project(project: str) -> dict:
 
     try:
         state = extract_project_state(result.text)
+        objects = scene_objects(result.text)
     except CatalogError as exc:
         return {"ok": False, "objects": None, "materials": None, "layers": None,
                 "error": str(exc)}
@@ -187,7 +188,7 @@ def inspect_project(project: str) -> dict:
         }
         for layer in (state.get("layer_datas") or [])
     ]
-    return {"ok": True, "objects": scene_objects(result.text),
+    return {"ok": True, "objects": objects,
             "materials": materials, "layers": layers, "error": None}
 
 

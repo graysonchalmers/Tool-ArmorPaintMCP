@@ -318,6 +318,24 @@ def test_inspect_project_surfaces_catalog_parse_error(tmp_path):
     assert "no state block" in result["error"]
 
 
+def test_inspect_project_surfaces_scene_objects_parse_error(tmp_path):
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_api") as mock_run_api, \
+         patch("armorpaint_mcp.server.extract_project_state", return_value={}), \
+         patch("armorpaint_mcp.server.scene_objects",
+               side_effect=CatalogError("no scene objects section")):
+        mock_cfg.return_value.binary = str(tmp_path / "ArmorPaint.exe")
+        mock_cfg.return_value.allowed_roots = []
+        mock_run_api.return_value = ApiResult(ok=True, text="text")
+
+        result = inspect_project(project=str(project))
+
+    assert result["ok"] is False
+    assert "no scene objects section" in result["error"]
+
+
 def test_inspect_project_rejects_nonexistent_project_path(tmp_path):
     """Confirmed against the real ArmorPaint binary: a nonexistent (or
     non-.arm) project path makes ArmorPaint silently ignore the bogus

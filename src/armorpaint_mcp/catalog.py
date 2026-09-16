@@ -91,12 +91,26 @@ def layer_blend_modes() -> list[str]:
     ]
 
 
+_SCENE_OBJECTS_MARKER = "Scene objects in world space"
+
+
 def scene_objects(api_text: str) -> list[dict]:
     """Every object in the 'Scene objects in world space' section: name,
     location, and size, already in world space (no matrix decoding needed --
     unlike mesh_transforms in the JSON state block, which is column-major
     4x4 and not worth parsing when this text section already has the
-    answer)."""
+    answer).
+
+    Raises CatalogError if the section marker itself is missing from
+    api_text -- consistent with extract_project_state's and blend_modes()'s
+    CatalogError convention for a missing anchor. Returns [] when the
+    marker IS present but no object lines follow it: a genuinely empty
+    scene is valid data, not a malformed read, and must not be confused
+    with the marker being absent entirely."""
+    if _SCENE_OBJECTS_MARKER not in api_text:
+        raise CatalogError(
+            "'--api' output has no 'Scene objects in world space' section -- "
+            "was a project path passed to ArmorPaint.exe, not just --api?")
     pattern = re.compile(
         r'"([^"]+)": location \(([^)]+)\), size \(([^)]+)\)')
     return [
