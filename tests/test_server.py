@@ -1,11 +1,24 @@
+import asyncio
 from unittest.mock import patch
 
+import pytest
+
+from armorpaint_mcp import server
 from armorpaint_mcp.runner import ExportResult
-from armorpaint_mcp.server import reexport_project
+from armorpaint_mcp.server import mcp, reexport_project
+
+
+@pytest.fixture(autouse=True)
+def reset_config_memo():
+    """`server._cfg` is a module global memo. Reset it around every test so a
+    config loaded (or mocked) by one test can't leak into the next."""
+    server._cfg = None
+    yield
+    server._cfg = None
 
 
 def test_reexport_project_returns_error_for_unknown_preset(tmp_path):
-    with patch("armorpaint_mcp.server.load_config") as mock_cfg, \
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
          patch("armorpaint_mcp.server.list_export_presets", return_value=["generic"]):
         mock_cfg.return_value.binary = str(tmp_path / "ArmorPaint.exe")
         mock_cfg.return_value.allowed_roots = []
@@ -25,7 +38,7 @@ def test_reexport_project_rejects_path_outside_allowed_roots(tmp_path):
     root.mkdir()
     outside_project = tmp_path / "elsewhere" / "project.arm"
 
-    with patch("armorpaint_mcp.server.load_config") as mock_cfg, \
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
          patch("armorpaint_mcp.server.list_export_presets", return_value=["generic"]):
         mock_cfg.return_value.binary = str(tmp_path / "ArmorPaint.exe")
         mock_cfg.return_value.allowed_roots = [str(root)]
@@ -44,7 +57,7 @@ def test_reexport_project_calls_runner_and_returns_files(tmp_path):
     project.write_bytes(b"fake")
     output_dir = tmp_path / "out"
 
-    with patch("armorpaint_mcp.server.load_config") as mock_cfg, \
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
          patch("armorpaint_mcp.server.list_export_presets", return_value=["generic"]), \
          patch("armorpaint_mcp.server.export_textures") as mock_export:
         mock_cfg.return_value.binary = str(tmp_path / "ArmorPaint.exe")
@@ -59,3 +72,42 @@ def test_reexport_project_calls_runner_and_returns_files(tmp_path):
                        "error": None}
     mock_export.assert_called_once_with(
         mock_cfg.return_value.binary, str(project), "png", "generic", str(output_dir))
+
+
+def test_reexport_project_blames_the_config_not_the_preset_for_a_bad_binary(
+        tmp_path, monkeypatch):
+    """A missing AP_BINARY used to surface as "unknown preset 'generic';
+    available: " -- the preset check running against an install that isn't
+    there. Validating config first makes it say what's actually wrong."""
+    monkeypatch.setenv("AP_BINARY", str(tmp_path / "nope" / "ArmorPaint.exe"))
+    monkeypatch.setenv("AP_DOTENV", str(tmp_path / "absent.env"))
+
+    with pytest.raises(FileNotFoundError, match="AP_BINARY"):
+        reexport_project(project=str(tmp_path / "project.arm"), preset="generic",
+                          output_dir=str(tmp_path / "out"))
+
+
+def test_ensure_ready_does_not_memoize_an_invalid_config(tmp_path, monkeypatch):
+    """Fail-fast has to fail on EVERY call, not just the first one."""
+    monkeypatch.setenv("AP_BINARY", str(tmp_path / "nope" / "ArmorPaint.exe"))
+    monkeypatch.setenv("AP_DOTENV", str(tmp_path / "absent.env"))
+
+    for _ in range(2):
+        with pytest.raises(FileNotFoundError):
+            server._ensure_ready()
+    assert server._cfg is None
+
+
+def test_reexport_project_is_registered_as_an_mcp_tool():
+    """The integration test calls reexport_project as a plain function, which
+    proves nothing about the MCP layer. This asserts the tool is actually
+    registered on the server object an MCP client would talk to."""
+    tools = asyncio.run(mcp.list_tools())
+
+    by_name = {t.name: t for t in tools}
+    assert "reexport_project" in by_name, sorted(by_name)
+    tool = by_name["reexport_project"]
+    assert "Re-export" in tool.description
+    assert set(tool.input_schema["properties"]) == {"project", "preset", "output_dir"}
+    assert set(tool.input_schema.get("required", [])) == {
+        "project", "preset", "output_dir"}

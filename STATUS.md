@@ -26,7 +26,7 @@
 |---|---|---|
 | `src/armorpaint_mcp/config.py` | 🔌 | loads `AP_*` env/`.env`, `require_valid` |
 | `src/armorpaint_mcp/doctor.py` | 🔌 | `--check` preflight checklist |
-| `src/armorpaint_mcp/server.py` | 🔌 | `--check`/`--version`/`--help` + empty `MCPServer`, zero tools |
+| `src/armorpaint_mcp/server.py` | 🔌 | `--check`/`--version`/`--help` + the `MCPServer` (empty at Phase 0; `reexport_project` registered on it in Phase 1) |
 | `smoke/smoke.ps1` | ✅ | run 2026-09-15, 3/3 passed |
 | build stamp (`scripts/build_stamp.py`) | 🔌 | vendored, baked at first commit |
 | git repo | 🔌 | initialized this session |

@@ -17,10 +17,15 @@ mcp = MCPServer("armorpaint-mcp")
 
 
 def _ensure_ready():
+    """Load and validate config once, then memoize. Validation happens
+    BEFORE the memo is written: memoizing first would make an invalid
+    config fail only on the first call and then be silently accepted by
+    every call after it."""
     global _cfg
     if _cfg is None:
-        _cfg = load_config()
-        require_valid(_cfg)
+        cfg = load_config()
+        require_valid(cfg)
+        _cfg = cfg
     return _cfg
 
 
@@ -33,7 +38,10 @@ def reexport_project(project: str, preset: str, output_dir: str) -> dict:
     (this checkout has: base_color, generic, minecraft_mer, specular,
     unigine, unity, unreal, xplane). Bounded by AP_ALLOWED_ROOTS when set.
     Returns {"ok": bool, "files": [str] | None, "error": str | None}."""
-    cfg = load_config()
+    # Validates config (not just loads it): without require_valid, a missing
+    # or wrong AP_BINARY surfaces further down as "unknown preset 'generic';
+    # available: " -- blaming the preset for a config fault.
+    cfg = _ensure_ready()
 
     available = list_export_presets(cfg.binary)
     if preset not in available:

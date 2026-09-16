@@ -6,7 +6,7 @@
 ## What this project is
 
 An MCP server (Python) that lets Claude batch-drive ArmorPaint — re-export
-existing `.arm` projects at different presets/resolutions, rebake, swap
+existing `.arm` projects at different presets, rebake, swap
 texture sets — via ArmorPaint's own native CLI flags and minic scripting
 engine. Read
 [docs/superpowers/specs/2026-09-15-armorpaint-mcp-design.md](docs/superpowers/specs/2026-09-15-armorpaint-mcp-design.md)
@@ -30,7 +30,8 @@ explicitly deferred, not rejected — see the spec's "Deferred: live mode".
 | Setup preflight | `ap-mcp --check` |
 | Run the server | `ap-mcp` (stdio) |
 | Smoke test | `pwsh smoke/smoke.ps1` (must exit 0) |
-| Unit tests | `pytest -q` |
+| Unit tests | `pytest -q` (integration deselected by default via `addopts`) |
+| Integration test | `pytest -q -m integration` (real ArmorPaint, needs `AP_BINARY`) |
 | Build stamp | `python scripts/build_stamp.py` |
 
 ## Environment (this machine)

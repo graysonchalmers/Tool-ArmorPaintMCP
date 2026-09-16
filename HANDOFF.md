@@ -7,7 +7,9 @@ _Last updated: 2026-09-15_
 ## 🎯 Current state
 
 Phase 1 shipped: a Python MCP server that batch-drives ArmorPaint via its
-native CLI flags (`--background`/`--export-textures`), with a real
+native CLI flags — `--export-textures` **without** `--background`, since
+that combination is confirmed broken on this build (it exits 0 having
+written nothing; see `runner.py`'s docstring) — with a real
 `reexport_project` MCP tool, path sandboxing, a subprocess runner, a real
 binary `.arm` fixture, a passing integration test against real ArmorPaint on
 this machine, and a gallery of two real example output images with an
@@ -22,11 +24,17 @@ All 8 tasks of the Phase 1 plan
 (`.superpowers/sdd/2026-09-15-phase1-reexport-project/`) are complete and
 reviewed clean, executed on feature branch **`phase1-reexport-project`**
 (a controller decision made before Task 1, for safety — work did not
-proceed directly on `main`). Final verification sweep (Task 8) is green:
+proceed directly on `main`). The final whole-branch review's one Critical
+and six Important findings have since been fixed on the same branch (see
+`.superpowers/sdd/2026-09-15-phase1-reexport-project/final-review-fix-report.md`);
+the headline of that wave is that export completion is now decided against
+the files the chosen preset says it writes, not against "filenames that are
+new since we started". Verification sweep is green:
 
-- `pytest -q -m "not integration"` → 14 passed, 1 deselected
-- `pytest -q -m integration` (with `AP_BINARY` set) → 1 passed, 14 deselected
-- `pwsh smoke\smoke.ps1` → `SMOKE OK` (3/3)
+- `pytest -q` → 29 passed, 1 deselected (unit-only is now the default,
+  via `addopts` in `pyproject.toml`)
+- `pytest -q -m integration` (with `AP_BINARY` set) → 1 passed, 29 deselected
+- `pwsh smoke\smoke.ps1` → `SMOKE OK` (4/4)
 - `python -m armorpaint_mcp.server --check` (with `AP_BINARY` set) → all
   checks passed, exit 0
 
@@ -100,7 +108,8 @@ Alternatives:
   `phase1-reexport-project` (controller decision: not on `main`, for
   safety, made before Task 1).
 - Built `paths.py` (sandboxing), `runner.py` (subprocess runner for native
-  `--background --export-textures`), and the `reexport_project` MCP tool.
+  `--export-textures`, deliberately **without** `--background`), and the
+  `reexport_project` MCP tool.
 - Added a real binary `.arm` fixture, unit tests, and one passing
   integration test run against real ArmorPaint on this machine.
 - Added a docs gallery with two real (if visually flat/deliberately-blank
@@ -108,3 +117,18 @@ Alternatives:
 - Task 8 final verification sweep all green (unit, integration, smoke,
   `--check`); pushed `phase1-reexport-project` to origin (not merged to
   `main` — that's next, via `superpowers:finishing-a-development-branch`).
+
+### 2026-09-15 — final whole-branch review fix wave
+- Fixed the review's Critical finding: `runner.py` decided success by
+  diffing output-directory filenames, but ArmorPaint overwrites rather than
+  creating uniquely-named files — so a re-export reported a false failure
+  and a second preset into the same directory reported a partial file list
+  as `ok=True`. Completion is now derived from the preset's own JSON
+  definition (`data/export_presets/<preset>.json`) and each expected file
+  must be (re)written by this run.
+- Fixed six Important findings: config validation in `reexport_project`
+  (`_ensure_ready`, not bare `load_config`), HANDOFF stating the
+  `--background` fact backwards, no MCP-registration coverage (test +
+  smoke probe), `pytest -q` silently running the integration test,
+  `try/finally` around the poll loop so the GUI process can't be leaked,
+  and `AP_OUTPUT_DIR` documented as live when nothing reads it.

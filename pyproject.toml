@@ -38,6 +38,11 @@ Homepage = "https://github.com/graysonchalmers/Tool-ArmorPaintMCP"
 markers = [
     "integration: real ArmorPaint process required (needs AP_BINARY set to a working build)",
 ]
+# Registering the marker does NOT deselect it -- plain `pytest -q` would
+# otherwise launch a real ArmorPaint GUI. Unit-only is the default; run the
+# real one deliberately with `pytest -q -m integration` (a -m on the command
+# line replaces this one).
+addopts = ["-m", "not integration"]
 
 [build-system]
 requires = ["setuptools>=68"]

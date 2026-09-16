@@ -2,7 +2,7 @@
 
 An [MCP](https://modelcontextprotocol.io) server that lets an AI assistant
 batch-drive [ArmorPaint](https://armorpaint.org) — re-export existing
-projects at different presets/resolutions, rebake, swap texture sets —
+projects at different presets, rebake, swap texture sets —
 without opening the GUI for each pass.
 
 Full design (including why this deliberately does **not** patch ArmorPaint's
@@ -90,12 +90,18 @@ the version.
 pwsh smoke/smoke.ps1
 ```
 
-Headless proof the scaffold is alive: package imports, `--version` and
-`--help` exit 0. Once real tools land, each phase adds a probe here.
+Headless proof the project is alive: package imports, `--version` and
+`--help` exit 0, and `reexport_project` is registered as an MCP tool. Each
+phase adds a probe here.
 
 ```bash
 pytest -q                # unit tests (fast, no ArmorPaint process)
+pytest -q -m integration # the real one: launches ArmorPaint, needs AP_BINARY
 ```
+
+The integration test is deselected by default (`addopts` in `pyproject.toml`),
+so `pytest -q` never launches a GUI; `-m integration` on the command line
+replaces that default and runs only the real one.
 
 ## Connect it to an MCP client
 
