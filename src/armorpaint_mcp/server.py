@@ -9,7 +9,8 @@ from armorpaint_mcp.doctor import run_check
 from armorpaint_mcp.catalog import (CatalogError, extract_project_state,
                                     layer_blend_modes, scene_objects)
 from armorpaint_mcp.paths import ensure_within_roots, PathNotAllowed
-from armorpaint_mcp.runner import export_textures, list_export_presets, run_api, run_procedural_material
+from armorpaint_mcp.runner import (export_textures, list_export_presets, run_api,
+                                   run_minic_script, run_procedural_material)
 from armorpaint_mcp.script_gen import generate_script, NodeSpecError
 
 # Startup is lazy: importing this module must NOT validate config, so
@@ -185,6 +186,51 @@ def inspect_project(project: str) -> dict:
 
 
 mcp.tool()(inspect_project)
+
+
+def run_script(project: str, script: str) -> dict:
+    """Escape hatch: run an arbitrary minic script against an existing .arm
+    project via ArmorPaint's own --script flag, for anything the
+    purpose-built tools (reexport_project, create_procedural_material,
+    inspect_project) don't cover yet. `script` is minic (.c) source text --
+    written to a temp file and passed via --script, never executed as
+    arbitrary OS-level code (minic is ArmorPaint's own curated scripting
+    surface registered in minic_api_list.h, not a general-purpose language).
+    Same trust level as this project's other tools -- not gated behind an
+    extra opt-in flag.
+
+    IMPORTANT: ArmorPaint gives no diagnostic signal for a script runtime
+    error (confirmed empirically -- calling an undefined function exits 0
+    with empty output, identical to success). ok=True here means only "the
+    ArmorPaint process completed", not "the script did what you expected" --
+    verify results yourself (e.g. check that expected output files appeared,
+    or call inspect_project afterward). Bounded by AP_ALLOWED_ROOTS when set.
+    Returns {"ok": bool, "stdout": str | None, "stderr": str | None,
+    "error": str | None}."""
+    cfg = _ensure_ready()
+
+    try:
+        project = ensure_within_roots(project, cfg.allowed_roots)
+    except PathNotAllowed as exc:
+        return {"ok": False, "stdout": None, "stderr": None, "error": str(exc)}
+
+    # Same phantom-default-project trap inspect_project guards against
+    # (Phase 3 Finding 2): a bogus/nonexistent project path makes ArmorPaint
+    # silently open its own empty default project instead of failing, which
+    # would let the caller's script run against nothing while still
+    # reporting ok: True.
+    if not os.path.isfile(project) or not project.lower().endswith(".arm"):
+        return {"ok": False, "stdout": None, "stderr": None,
+                "error": f"'{project}' is not an existing .arm project file"}
+
+    result = run_minic_script(cfg.binary, project, script)
+    return {"ok": result.ok,
+            "stdout": result.stdout if result.ok else None,
+            "stderr": result.stderr if result.ok else None,
+            "error": result.error}
+
+
+mcp.tool()(run_script)
 
 
 _USAGE = (
