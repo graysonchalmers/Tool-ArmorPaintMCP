@@ -15,6 +15,17 @@ source, unlike the reference implementation it started from) is in
 [docs/PLAN.md](docs/PLAN.md) for the phase plan and [STATUS.md](STATUS.md)
 for the gate ledger.
 
+## Gallery
+
+Real output from `reexport_project`, run against the tracked sample project
+(`tests/fixtures/sample_project.arm` — ArmorPaint's own default cube-bevel
+primitive + default material, generated headlessly, see
+`tests/fixtures/generate_fixture.py`). Same project, two export presets:
+
+| `generic` preset (separate channels) | `unreal` preset (packed) |
+|:--:|:--:|
+| ![generic preset base color export](docs/images/gallery/generic_base.png) | ![unreal preset packed export](docs/images/gallery/unreal_packed.png) |
+
 ## How it works
 
 ArmorPaint ships real, unpatched CLI automation:
