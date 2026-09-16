@@ -11,6 +11,7 @@ from armorpaint_mcp.catalog import (
     CatalogError,
     blend_modes,
     extract_project_state,
+    layer_blend_modes,
     scene_objects,
 )
 
@@ -82,3 +83,19 @@ def test_scene_objects_parses_name_location_size():
 
 def test_scene_objects_empty_list_when_no_objects_section():
     assert scene_objects("nothing here") == []
+
+
+def test_layer_blend_modes_has_18_entries_and_no_exclusion():
+    """Regression test for the layer/MIX_RGB enum mix-up (Finding 1 of the
+    Phase 3 review): layer_datas[].blending indexes ArmorPaint's own
+    blend_type_t (enums.h), an 18-entry enum, NOT the 19-entry MIX_RGB
+    material-node ENUM that blend_modes() parses (that one inserts an extra
+    "Exclusion" at index 12). Using blend_modes() for a layer's blending
+    mislabels index 12 as "Exclusion" (real value: "Subtract") and index 17
+    as "Color" (real value: "Value")."""
+    modes = layer_blend_modes()
+
+    assert len(modes) == 18
+    assert modes[12] == "Subtract"
+    assert modes[17] == "Value"
+    assert "Exclusion" not in modes

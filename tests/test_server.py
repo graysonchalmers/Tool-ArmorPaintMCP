@@ -256,24 +256,28 @@ def test_inspect_project_rejects_path_outside_allowed_roots(tmp_path):
 
 
 def test_inspect_project_surfaces_run_api_failure(tmp_path):
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
     with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
          patch("armorpaint_mcp.server.run_api") as mock_run_api:
         mock_cfg.return_value.binary = str(tmp_path / "ArmorPaint.exe")
         mock_cfg.return_value.allowed_roots = []
         mock_run_api.return_value = ApiResult(ok=False, text="", error="'--api' exited 1")
 
-        result = inspect_project(project=str(tmp_path / "project.arm"))
+        result = inspect_project(project=str(project))
 
     assert result["ok"] is False
     assert result["error"] == "'--api' exited 1"
 
 
 def test_inspect_project_composes_catalog_parses_into_result(tmp_path):
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
     fake_api_text = "fake api text"
     with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
          patch("armorpaint_mcp.server.run_api") as mock_run_api, \
          patch("armorpaint_mcp.server.extract_project_state") as mock_state, \
-         patch("armorpaint_mcp.server.blend_modes", return_value=["Mix", "Darken"]), \
+         patch("armorpaint_mcp.server.layer_blend_modes", return_value=["Mix", "Darken"]), \
          patch("armorpaint_mcp.server.scene_objects",
                return_value=[{"name": "Tessellated", "location": [0.0, 0.0, 0.0],
                               "size": [1.0, 1.0, 1.0]}]):
@@ -286,7 +290,7 @@ def test_inspect_project_composes_catalog_parses_into_result(tmp_path):
                              "blending": 1}],
         }
 
-        result = inspect_project(project=str(tmp_path / "project.arm"))
+        result = inspect_project(project=str(project))
 
     assert result["ok"] is True
     assert result["error"] is None
@@ -298,6 +302,8 @@ def test_inspect_project_composes_catalog_parses_into_result(tmp_path):
 
 
 def test_inspect_project_surfaces_catalog_parse_error(tmp_path):
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
     with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
          patch("armorpaint_mcp.server.run_api") as mock_run_api, \
          patch("armorpaint_mcp.server.extract_project_state",
@@ -306,10 +312,75 @@ def test_inspect_project_surfaces_catalog_parse_error(tmp_path):
         mock_cfg.return_value.allowed_roots = []
         mock_run_api.return_value = ApiResult(ok=True, text="text")
 
-        result = inspect_project(project=str(tmp_path / "project.arm"))
+        result = inspect_project(project=str(project))
 
     assert result["ok"] is False
     assert "no state block" in result["error"]
+
+
+def test_inspect_project_rejects_nonexistent_project_path(tmp_path):
+    """Confirmed against the real ArmorPaint binary: a nonexistent (or
+    non-.arm) project path makes ArmorPaint silently ignore the bogus
+    argument and open its own default empty project instead -- without this
+    check, inspect_project would report ok:True with that phantom project's
+    data as if it had read the caller's project. The check happens before
+    run_api is ever invoked, so no mocking of it is needed here."""
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg:
+        mock_cfg.return_value.binary = str(tmp_path / "ArmorPaint.exe")
+        mock_cfg.return_value.allowed_roots = []
+        result = inspect_project(project=str(tmp_path / "does_not_exist.arm"))
+
+    assert result["ok"] is False
+    assert result["objects"] is None
+    assert result["materials"] is None
+    assert result["layers"] is None
+    assert "does_not_exist.arm" in result["error"]
+    assert "not an existing .arm project file" in result["error"]
+
+
+def test_inspect_project_rejects_existing_file_with_wrong_extension(tmp_path):
+    """Same failure mode as the nonexistent-path case: a real file that
+    isn't a .arm project (e.g. README.md) also makes ArmorPaint silently
+    fall back to its default project."""
+    not_arm = tmp_path / "README.md"
+    not_arm.write_text("not a project")
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg:
+        mock_cfg.return_value.binary = str(tmp_path / "ArmorPaint.exe")
+        mock_cfg.return_value.allowed_roots = []
+        result = inspect_project(project=str(not_arm))
+
+    assert result["ok"] is False
+    assert "not an existing .arm project file" in result["error"]
+
+
+def test_inspect_project_uses_layer_blend_modes_not_material_blend_modes(tmp_path):
+    """Regression test for the layer/MIX_RGB blend-enum mix-up (Finding 1):
+    layer_datas[].blending is an index into ArmorPaint's own blend_type_t
+    (paint/sources/enums.h), an 18-entry enum with no "Exclusion" -- NOT the
+    19-entry MIX_RGB material-node ENUM that blend_modes() parses. Index 12
+    is "Subtract" in the real layer enum but would be misreported as
+    "Exclusion" if the material-node list were used instead."""
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_api") as mock_run_api, \
+         patch("armorpaint_mcp.server.extract_project_state") as mock_state, \
+         patch("armorpaint_mcp.server.scene_objects", return_value=[]):
+        mock_cfg.return_value.binary = str(tmp_path / "ArmorPaint.exe")
+        mock_cfg.return_value.allowed_roots = []
+        mock_run_api.return_value = ApiResult(ok=True, text="fake api text")
+        mock_state.return_value = {
+            "material_nodes": [],
+            "layer_datas": [{"name": "Layer 1", "res": 2048, "visible": True,
+                             "blending": 12}],
+        }
+
+        result = inspect_project(project=str(project))
+
+    assert result["ok"] is True
+    assert result["layers"] == [{"name": "Layer 1", "resolution": 2048,
+                                 "visible": True, "blending": "Subtract"}]
 
 
 def test_inspect_project_registered_as_mcp_tool():

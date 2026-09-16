@@ -1,3 +1,4 @@
+import os
 import sys
 
 from mcp.server.mcpserver import MCPServer
@@ -5,7 +6,8 @@ from mcp.server.mcpserver import MCPServer
 from armorpaint_mcp import __version__
 from armorpaint_mcp.config import load_config, require_valid
 from armorpaint_mcp.doctor import run_check
-from armorpaint_mcp.catalog import CatalogError, blend_modes, extract_project_state, scene_objects
+from armorpaint_mcp.catalog import (CatalogError, extract_project_state,
+                                    layer_blend_modes, scene_objects)
 from armorpaint_mcp.paths import ensure_within_roots, PathNotAllowed
 from armorpaint_mcp.runner import export_textures, list_export_presets, run_api, run_procedural_material
 from armorpaint_mcp.script_gen import generate_script, NodeSpecError
@@ -142,6 +144,15 @@ def inspect_project(project: str) -> dict:
         return {"ok": False, "objects": None, "materials": None, "layers": None,
                 "error": str(exc)}
 
+    # ArmorPaint silently ignores a bogus --script/project argument and opens
+    # its own default empty project instead of failing -- without this check,
+    # a typo'd or nonexistent path would report ok:True with that phantom
+    # default project's data, which is worse than an error for a read-only
+    # reporting tool.
+    if not os.path.isfile(project) or not project.lower().endswith(".arm"):
+        return {"ok": False, "objects": None, "materials": None, "layers": None,
+                "error": f"'{project}' is not an existing .arm project file"}
+
     result = run_api(cfg.binary, project)
     if not result.ok:
         return {"ok": False, "objects": None, "materials": None, "layers": None,
@@ -149,11 +160,11 @@ def inspect_project(project: str) -> dict:
 
     try:
         state = extract_project_state(result.text)
-        modes = blend_modes(result.text)
     except CatalogError as exc:
         return {"ok": False, "objects": None, "materials": None, "layers": None,
                 "error": str(exc)}
 
+    modes = layer_blend_modes()
     materials = [
         {"name": m.get("name"), "node_count": len(m.get("nodes") or [])}
         for m in (state.get("material_nodes") or [])

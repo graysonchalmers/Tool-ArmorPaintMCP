@@ -63,6 +63,34 @@ def blend_modes(api_text: str) -> list[str]:
     return [re.sub(r'^\d+\s+', '', opt) for opt in options]
 
 
+def layer_blend_modes() -> list[str]:
+    """Blend mode names, in index order, for layer_datas[].blending --
+    ArmorPaint's blend_type_t enum, paint/sources/enums.h lines 135-154
+    (verified against the real checkout, 2026-09-16): 18 entries, Mix
+    through Value, with NO "Exclusion" entry.
+
+    This is a DELIBERATE, HARDCODED exception to this project's "dynamic
+    catalogs, no hardcoded magic numbers" rule: no dynamic source exists for
+    this specific enum. `--api`'s text output never prints it -- it's only
+    ever built as a UI combo box (paint/sources/ui/tab_layers.c's
+    tab_layers_combo_blending, paint/sources/ui/ui_header.c's brush blending
+    combo), never surfaced as text the way the material node-type reference
+    is.
+
+    DO NOT confuse this with blend_modes() above: that function parses the
+    MIX_RGB material node's blend_type ENUM button from --api output, which
+    is a DIFFERENT, 19-entry enum (it inserts an extra "Exclusion" at index
+    12 that this layer enum does not have). blend_modes() is correct for its
+    own purpose (MIX_RGB material nodes) and must not be changed to match
+    this one -- using either list for the other's field mislabels every
+    blend mode from index 12 up."""
+    return [
+        "Mix", "Darken", "Multiply", "Burn", "Lighten", "Screen", "Dodge",
+        "Add", "Overlay", "Soft Light", "Linear Light", "Difference",
+        "Subtract", "Divide", "Hue", "Saturation", "Color", "Value",
+    ]
+
+
 def scene_objects(api_text: str) -> list[dict]:
     """Every object in the 'Scene objects in world space' section: name,
     location, and size, already in world space (no matrix decoding needed --
