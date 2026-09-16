@@ -2,9 +2,10 @@
 
 An [MCP](https://modelcontextprotocol.io) server that lets an AI assistant
 batch-drive [ArmorPaint](https://armorpaint.org) — re-export existing
-projects at different presets, and build small procedural materials
-(checker/solid node graphs built, rendered, and exported in a single pass)
-— without opening the GUI for each pass. Mesh-detail rebaking and swapping
+projects at different presets, build small procedural materials
+(checker/solid node graphs built, rendered, and exported in a single pass),
+and inspect an existing project's objects, materials, and layers — without
+opening the GUI for each pass. Mesh-detail rebaking and swapping
 texture sets into an existing project are structurally unreachable on this
 ArmorPaint build (no CLI or scripting path exists for either) and are
 permanently out of scope — see [STATUS.md](STATUS.md)'s Known Issues for
@@ -16,7 +17,7 @@ source, unlike the reference implementation it started from) is in
 
 ## Status
 
-**Pre-alpha, Phase 2 (`create_procedural_material` shipped).** See [docs/PLAN.md](docs/PLAN.md)
+**Pre-alpha, Phase 3 (inspect_project shipped).** See [docs/PLAN.md](docs/PLAN.md)
 for the phase plan and [STATUS.md](STATUS.md) for the gate ledger.
 
 ## Gallery

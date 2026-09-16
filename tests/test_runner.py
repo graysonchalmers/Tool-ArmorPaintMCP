@@ -1,5 +1,6 @@
 import json
 import os
+import subprocess
 import threading
 from unittest.mock import patch, MagicMock
 
@@ -10,6 +11,7 @@ from armorpaint_mcp.runner import (
     export_textures,
     list_export_presets,
     preset_texture_names,
+    run_api,
     run_procedural_material,
 )
 
@@ -506,3 +508,55 @@ def test_run_procedural_material_fails_before_launching_for_unknown_preset(tmp_p
     assert result.ok is False
     assert "could not determine which files preset 'no_such_preset' exports" in result.error
     mock_popen.assert_not_called()
+
+
+def test_run_api_returns_stdout_on_success(tmp_path):
+    binary = tmp_path / "fake_armorpaint.py"
+    binary.write_text(
+        "import sys\n"
+        "print('fake --api output')\n"
+        "sys.exit(0)\n"
+    )
+    project = tmp_path / "project.arm"
+    project.write_text("")
+
+    with patch("armorpaint_mcp.runner.subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0, stdout="fake --api output\n",
+                                           stderr="")
+        result = run_api(str(binary), str(project))
+
+    mock_run.assert_called_once()
+    args = mock_run.call_args[0][0]
+    assert args == [str(binary), str(project), "--api"]
+    assert result.ok is True
+    assert result.text == "fake --api output\n"
+    assert result.error is None
+
+
+def test_run_api_reports_nonzero_exit(tmp_path):
+    binary = tmp_path / "ArmorPaint.exe"
+    binary.write_text("")
+    project = tmp_path / "project.arm"
+    project.write_text("")
+
+    with patch("armorpaint_mcp.runner.subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="boom")
+        result = run_api(str(binary), str(project))
+
+    assert result.ok is False
+    assert result.text == ""
+    assert "boom" in result.error
+
+
+def test_run_api_reports_timeout(tmp_path):
+    binary = tmp_path / "ArmorPaint.exe"
+    binary.write_text("")
+    project = tmp_path / "project.arm"
+    project.write_text("")
+
+    with patch("armorpaint_mcp.runner.subprocess.run",
+               side_effect=subprocess.TimeoutExpired(cmd="x", timeout=5.0)):
+        result = run_api(str(binary), str(project), timeout_s=5.0)
+
+    assert result.ok is False
+    assert "timed out after 5.0s" in result.error

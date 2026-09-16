@@ -101,12 +101,19 @@ asserts the exported base-color PNG is *not* uniform (i.e. genuinely
 painted, not the flat default) — a real content check, not just
 file-exists.
 
-## Phase 3 — `list_export_presets` + `inspect_project` + dynamic catalog
+## Phase 3 — `inspect_project` + dynamic catalog
 
-`catalog.py` builds bake-type/blend-mode/export-preset lists from `--api`
-output and `export_presets/*.json` on disk — no hardcoded magic numbers.
+`catalog.py` builds a blend-mode list from ArmorPaint's own `--api` output
+(the MIX_RGB node's `blend_type` ENUM button) -- no hardcoded magic
+numbers. Bake types are deliberately NOT catalogued: the only bake-adjacent
+node type, TEX_BAKE, exposes its type selector as a CUSTOM button widget
+with no text-exposed option list, and since mesh-detail baking is already
+confirmed structurally unreachable from any script/CLI path (see Known
+Issue #1 in STATUS.md), a bake-type catalog would have no consumer.
 `inspect_project` is a read-only `.arm` metadata query (objects, materials,
-layers).
+layers) via `ArmorPaint.exe <project> --api` -- a third, previously-unused
+automation path distinct from `--export-textures` and `--script`, and
+structurally simpler than either (no poll-and-terminate needed).
 
 **Gate:** catalog build succeeds against the real local ArmorPaint
 checkout/build and returns a non-empty, sane-looking list for each category.
