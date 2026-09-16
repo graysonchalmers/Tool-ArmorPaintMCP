@@ -1,4 +1,5 @@
 import os
+import threading
 from unittest.mock import patch, MagicMock
 
 from armorpaint_mcp.runner import list_export_presets, export_textures
@@ -52,8 +53,13 @@ def test_export_textures_reports_success_when_files_appear(tmp_path):
     mock_proc.communicate.return_value = ("", "")
 
     def fake_popen(args, **kwargs):
-        # Simulate ArmorPaint writing a file shortly after launch.
-        (output_dir / "project_base.png").write_bytes(b"fake png")
+        # Simulate ArmorPaint writing a file after a short delay (not synchronously).
+        # This exercises the polling loop's multi-iteration behavior.
+        def write_file():
+            (output_dir / "project_base.png").write_bytes(b"fake png")
+        timer = threading.Timer(0.3, write_file)
+        timer.daemon = True
+        timer.start()
         return mock_proc
 
     with patch("armorpaint_mcp.runner.subprocess.Popen", side_effect=fake_popen):
