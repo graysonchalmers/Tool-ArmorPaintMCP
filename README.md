@@ -4,12 +4,13 @@ An [MCP](https://modelcontextprotocol.io) server that lets an AI assistant
 batch-drive [ArmorPaint](https://armorpaint.org) — re-export existing
 projects at different presets, build small procedural materials
 (checker/solid node graphs built, rendered, and exported in a single pass),
-and inspect an existing project's objects, materials, and layers — without
-opening the GUI for each pass. Mesh-detail rebaking and swapping
-texture sets into an existing project are structurally unreachable on this
-ArmorPaint build (no CLI or scripting path exists for either) and are
-permanently out of scope — see [STATUS.md](STATUS.md)'s Known Issues for
-the specifics.
+inspect an existing project's objects, materials, and layers, and run
+arbitrary minic scripts against a project for anything the purpose-built
+tools don't cover — without opening the GUI for each pass. Mesh-detail
+rebaking and swapping texture sets into an existing project are structurally
+unreachable on this ArmorPaint build (no CLI or scripting path exists for
+either) and are permanently out of scope — see [STATUS.md](STATUS.md)'s
+Known Issues for the specifics.
 
 Full design (including why this deliberately does **not** patch ArmorPaint's
 source, unlike the reference implementation it started from) is in
@@ -17,8 +18,12 @@ source, unlike the reference implementation it started from) is in
 
 ## Status
 
-**Pre-alpha, Phase 3 (inspect_project shipped).** See [docs/PLAN.md](docs/PLAN.md)
-for the phase plan and [STATUS.md](STATUS.md) for the gate ledger.
+**Alpha — v1 tool surface complete (Phase 4: `run_script` shipped).** All
+five planned tools (`reexport_project`, `create_procedural_material`,
+`list_available_presets`, `inspect_project`, `run_script`) are implemented,
+tested, and gated. See [docs/PLAN.md](docs/PLAN.md) for the phase plan and
+[STATUS.md](STATUS.md) for the gate ledger. Live/interactive "live mode" is
+deferred, not shipped — see the design spec's "Deferred: live mode" section.
 
 ## Gallery
 
@@ -60,6 +65,10 @@ ArmorPaint ships real, unpatched CLI automation:
 project), and `--api` (prints the full scripting API reference). This server
 drives those directly — no source patching, no custom rebuild, runs against
 the stock binary.
+
+The escape-hatch tool, `run_script`, hands the caller's own minic source
+straight to `--script` against an already-open project — for the cases the
+four purpose-built tools above don't cover.
 
 ## Requirements
 
