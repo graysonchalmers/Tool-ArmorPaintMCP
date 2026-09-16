@@ -5,8 +5,9 @@ from mcp.server.mcpserver import MCPServer
 from armorpaint_mcp import __version__
 from armorpaint_mcp.config import load_config, require_valid
 from armorpaint_mcp.doctor import run_check
+from armorpaint_mcp.catalog import CatalogError, blend_modes, extract_project_state, scene_objects
 from armorpaint_mcp.paths import ensure_within_roots, PathNotAllowed
-from armorpaint_mcp.runner import export_textures, list_export_presets, run_procedural_material
+from armorpaint_mcp.runner import export_textures, list_export_presets, run_api, run_procedural_material
 from armorpaint_mcp.script_gen import generate_script, NodeSpecError
 
 # Startup is lazy: importing this module must NOT validate config, so
@@ -124,6 +125,55 @@ def list_available_presets() -> dict:
 
 
 mcp.tool()(list_available_presets)
+
+
+def inspect_project(project: str) -> dict:
+    """Read-only metadata for an existing .arm project -- objects,
+    materials, and layers -- via ArmorPaint's own `--api` flag (a project
+    path plus --api prints a full project-state dump, not just static API
+    docs). Makes no changes to the project. Bounded by AP_ALLOWED_ROOTS
+    when set. Returns {"ok": bool, "objects": [...] | None,
+    "materials": [...] | None, "layers": [...] | None, "error": str | None}."""
+    cfg = _ensure_ready()
+
+    try:
+        project = ensure_within_roots(project, cfg.allowed_roots)
+    except PathNotAllowed as exc:
+        return {"ok": False, "objects": None, "materials": None, "layers": None,
+                "error": str(exc)}
+
+    result = run_api(cfg.binary, project)
+    if not result.ok:
+        return {"ok": False, "objects": None, "materials": None, "layers": None,
+                "error": result.error}
+
+    try:
+        state = extract_project_state(result.text)
+        modes = blend_modes(result.text)
+    except CatalogError as exc:
+        return {"ok": False, "objects": None, "materials": None, "layers": None,
+                "error": str(exc)}
+
+    materials = [
+        {"name": m.get("name"), "node_count": len(m.get("nodes") or [])}
+        for m in (state.get("material_nodes") or [])
+    ]
+    layers = [
+        {
+            "name": layer.get("name"),
+            "resolution": layer.get("res"),
+            "visible": layer.get("visible"),
+            "blending": modes[layer["blending"]]
+                        if isinstance(layer.get("blending"), int)
+                        and 0 <= layer["blending"] < len(modes) else None,
+        }
+        for layer in (state.get("layer_datas") or [])
+    ]
+    return {"ok": True, "objects": scene_objects(result.text),
+            "materials": materials, "layers": layers, "error": None}
+
+
+mcp.tool()(inspect_project)
 
 
 _USAGE = (

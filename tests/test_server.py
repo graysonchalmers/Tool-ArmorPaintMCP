@@ -4,9 +4,10 @@ from unittest.mock import patch
 import pytest
 
 from armorpaint_mcp import server
-from armorpaint_mcp.runner import ExportResult
+from armorpaint_mcp.catalog import CatalogError
+from armorpaint_mcp.runner import ExportResult, ApiResult
 from armorpaint_mcp.server import (mcp, reexport_project, create_procedural_material,
-                                   list_available_presets)
+                                   list_available_presets, inspect_project)
 
 
 @pytest.fixture(autouse=True)
@@ -237,3 +238,80 @@ def test_list_available_presets_is_registered_as_an_mcp_tool():
 
     by_name = {t.name: t for t in tools}
     assert "list_available_presets" in by_name, sorted(by_name)
+
+
+def test_inspect_project_rejects_path_outside_allowed_roots(tmp_path):
+    root = tmp_path / "allowed"
+    root.mkdir()
+    outside_project = tmp_path / "elsewhere" / "project.arm"
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg:
+        mock_cfg.return_value.binary = str(tmp_path / "ArmorPaint.exe")
+        mock_cfg.return_value.allowed_roots = [str(root)]
+        result = inspect_project(project=str(outside_project))
+
+    assert result["ok"] is False
+    assert result["objects"] is None
+    assert "allowed" in result["error"]
+
+
+def test_inspect_project_surfaces_run_api_failure(tmp_path):
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_api") as mock_run_api:
+        mock_cfg.return_value.binary = str(tmp_path / "ArmorPaint.exe")
+        mock_cfg.return_value.allowed_roots = []
+        mock_run_api.return_value = ApiResult(ok=False, text="", error="'--api' exited 1")
+
+        result = inspect_project(project=str(tmp_path / "project.arm"))
+
+    assert result["ok"] is False
+    assert result["error"] == "'--api' exited 1"
+
+
+def test_inspect_project_composes_catalog_parses_into_result(tmp_path):
+    fake_api_text = "fake api text"
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_api") as mock_run_api, \
+         patch("armorpaint_mcp.server.extract_project_state") as mock_state, \
+         patch("armorpaint_mcp.server.blend_modes", return_value=["Mix", "Darken"]), \
+         patch("armorpaint_mcp.server.scene_objects",
+               return_value=[{"name": "Tessellated", "location": [0.0, 0.0, 0.0],
+                              "size": [1.0, 1.0, 1.0]}]):
+        mock_cfg.return_value.binary = str(tmp_path / "ArmorPaint.exe")
+        mock_cfg.return_value.allowed_roots = []
+        mock_run_api.return_value = ApiResult(ok=True, text=fake_api_text)
+        mock_state.return_value = {
+            "material_nodes": [{"name": "Material 1", "nodes": [1, 2, 3]}],
+            "layer_datas": [{"name": "Layer 1", "res": 2048, "visible": True,
+                             "blending": 1}],
+        }
+
+        result = inspect_project(project=str(tmp_path / "project.arm"))
+
+    assert result["ok"] is True
+    assert result["error"] is None
+    assert result["objects"] == [{"name": "Tessellated", "location": [0.0, 0.0, 0.0],
+                                  "size": [1.0, 1.0, 1.0]}]
+    assert result["materials"] == [{"name": "Material 1", "node_count": 3}]
+    assert result["layers"] == [{"name": "Layer 1", "resolution": 2048,
+                                 "visible": True, "blending": "Darken"}]
+
+
+def test_inspect_project_surfaces_catalog_parse_error(tmp_path):
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_api") as mock_run_api, \
+         patch("armorpaint_mcp.server.extract_project_state",
+               side_effect=CatalogError("no state block")):
+        mock_cfg.return_value.binary = str(tmp_path / "ArmorPaint.exe")
+        mock_cfg.return_value.allowed_roots = []
+        mock_run_api.return_value = ApiResult(ok=True, text="text")
+
+        result = inspect_project(project=str(tmp_path / "project.arm"))
+
+    assert result["ok"] is False
+    assert "no state block" in result["error"]
+
+
+def test_inspect_project_registered_as_mcp_tool():
+    names = [t.name for t in asyncio.run(mcp.list_tools())]
+    assert "inspect_project" in names
