@@ -11,20 +11,26 @@ source, unlike the reference implementation it started from) is in
 
 ## Status
 
-**Pre-alpha, Phase 0 (scaffold).** No MCP tools are implemented yet — see
-[docs/PLAN.md](docs/PLAN.md) for the phase plan and [STATUS.md](STATUS.md)
-for the gate ledger.
+**Pre-alpha, Phase 1 (`reexport_project` shipped).** See [docs/PLAN.md](docs/PLAN.md)
+for the phase plan and [STATUS.md](STATUS.md) for the gate ledger.
 
 ## Gallery
 
 Real output from `reexport_project`, run against the tracked sample project
 (`tests/fixtures/sample_project.arm` — ArmorPaint's own default cube-bevel
 primitive + default material, generated headlessly, see
-`tests/fixtures/generate_fixture.py`). Same project, two export presets:
+`tests/fixtures/generate_fixture.py`). The fixture is intentionally blank
+(no painted layers), so these are flat, single-color swatches, not textured
+renders — the point is the real preset-to-preset difference in what gets
+exported, not visual richness. Same project, two export presets:
 
 | `generic` preset (separate channels) | `unreal` preset (packed) |
 |:--:|:--:|
 | ![generic preset base color export](docs/images/gallery/generic_base.png) | ![unreal preset packed export](docs/images/gallery/unreal_packed.png) |
+
+Richer, actually-painted example output is a natural follow-up once a later
+phase adds baking or painting — tracked as an open item, not blocking this
+phase's gate.
 
 ## How it works
 
