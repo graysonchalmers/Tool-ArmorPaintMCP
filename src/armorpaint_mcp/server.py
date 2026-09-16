@@ -34,6 +34,24 @@ def _ensure_ready():
     return _cfg
 
 
+def _failure(error: str, *null_fields: str) -> dict:
+    """The common shape of every tool's early-exit failure: ok=False, the
+    error message, and every OTHER field the tool's success shape declares
+    explicitly nulled out (never omitted -- callers pattern-match on a
+    stable key set regardless of which branch returned)."""
+    return {"ok": False, "error": error, **{f: None for f in null_fields}}
+
+
+def _is_arm_project_file(path: str) -> bool:
+    """True only for an existing, real .arm file on disk. ArmorPaint
+    silently ignores a bogus --script/project positional argument and opens
+    its own empty default project instead of failing -- both
+    inspect_project and run_script must reject a bad path themselves before
+    launching ArmorPaint, or a typo'd path would report ok:True against
+    that phantom default project's data instead of an error."""
+    return os.path.isfile(path) and path.lower().endswith(".arm")
+
+
 def reexport_project(project: str, preset: str, output_dir: str) -> dict:
     """Re-export an existing .arm project's textures at a given preset,
     using ArmorPaint's native --export-textures flag (PNG). No resolution
@@ -50,14 +68,14 @@ def reexport_project(project: str, preset: str, output_dir: str) -> dict:
 
     available = list_export_presets(cfg.binary)
     if preset not in available:
-        return {"ok": False, "files": None,
-                "error": f"unknown preset '{preset}'; available: {', '.join(available)}"}
+        return _failure(
+            f"unknown preset '{preset}'; available: {', '.join(available)}", "files")
 
     try:
         project = ensure_within_roots(project, cfg.allowed_roots)
         output_dir = ensure_within_roots(output_dir, cfg.allowed_roots)
     except PathNotAllowed as exc:
-        return {"ok": False, "files": None, "error": str(exc)}
+        return _failure(str(exc), "files")
 
     result = export_textures(cfg.binary, project, "png", preset, output_dir)
     return {"ok": result.ok, "files": result.files if result.ok else None,
@@ -89,31 +107,31 @@ def create_procedural_material(node_spec: dict, output_dir: str,
 
     available = list_export_presets(cfg.binary)
     if preset not in available:
-        return {"ok": False, "files": None,
-                "error": f"unknown preset '{preset}'; available: {', '.join(available)}"}
+        return _failure(
+            f"unknown preset '{preset}'; available: {', '.join(available)}", "files")
 
     if preset != "generic":
-        return {"ok": False, "files": None,
-                "error": (f"create_procedural_material only supports the 'generic' "
-                          f"preset: the single-process script flow calls "
-                          f"export_texture_run(), which has no preset argument and "
-                          f"no minic setter exists for it -- it always exports "
-                          f"whatever preset last configured the export box, which "
-                          f"in this headless flow is always ArmorPaint's own "
-                          f"'generic' fallback. Requesting '{preset}' would either "
-                          f"time out waiting for files that never arrive, or (for "
-                          f"a preset whose files are a strict subset of generic's) "
-                          f"silently report success for the wrong export.")}
+        return _failure(
+            (f"create_procedural_material only supports the 'generic' "
+             f"preset: the single-process script flow calls "
+             f"export_texture_run(), which has no preset argument and "
+             f"no minic setter exists for it -- it always exports "
+             f"whatever preset last configured the export box, which "
+             f"in this headless flow is always ArmorPaint's own "
+             f"'generic' fallback. Requesting '{preset}' would either "
+             f"time out waiting for files that never arrive, or (for "
+             f"a preset whose files are a strict subset of generic's) "
+             f"silently report success for the wrong export."), "files")
 
     try:
         output_dir = ensure_within_roots(output_dir, cfg.allowed_roots)
     except PathNotAllowed as exc:
-        return {"ok": False, "files": None, "error": str(exc)}
+        return _failure(str(exc), "files")
 
     try:
         script_text = generate_script(node_spec, output_dir)
     except NodeSpecError as exc:
-        return {"ok": False, "files": None, "error": str(exc)}
+        return _failure(str(exc), "files")
 
     result = run_procedural_material(cfg.binary, script_text, output_dir, preset)
     return {"ok": result.ok, "files": result.files if result.ok else None,
@@ -148,29 +166,26 @@ def inspect_project(project: str) -> dict:
     try:
         project = ensure_within_roots(project, cfg.allowed_roots)
     except PathNotAllowed as exc:
-        return {"ok": False, "objects": None, "materials": None, "layers": None,
-                "error": str(exc)}
+        return _failure(str(exc), "objects", "materials", "layers")
 
     # ArmorPaint silently ignores a bogus --script/project argument and opens
     # its own default empty project instead of failing -- without this check,
     # a typo'd or nonexistent path would report ok:True with that phantom
     # default project's data, which is worse than an error for a read-only
     # reporting tool.
-    if not os.path.isfile(project) or not project.lower().endswith(".arm"):
-        return {"ok": False, "objects": None, "materials": None, "layers": None,
-                "error": f"'{project}' is not an existing .arm project file"}
+    if not _is_arm_project_file(project):
+        return _failure(f"'{project}' is not an existing .arm project file",
+                        "objects", "materials", "layers")
 
     result = run_api(cfg.binary, project)
     if not result.ok:
-        return {"ok": False, "objects": None, "materials": None, "layers": None,
-                "error": result.error}
+        return _failure(result.error, "objects", "materials", "layers")
 
     try:
         state = extract_project_state(result.text)
         objects = scene_objects(result.text)
     except CatalogError as exc:
-        return {"ok": False, "objects": None, "materials": None, "layers": None,
-                "error": str(exc)}
+        return _failure(str(exc), "objects", "materials", "layers")
 
     modes = layer_blend_modes()
     materials = [
@@ -243,16 +258,16 @@ def run_script(project: str, script: str, timeout_s: float = DEFAULT_TIMEOUT_S) 
     try:
         project = ensure_within_roots(project, cfg.allowed_roots)
     except PathNotAllowed as exc:
-        return {"ok": False, "stdout": None, "stderr": None, "error": str(exc)}
+        return _failure(str(exc), "stdout", "stderr")
 
     # Same phantom-default-project trap inspect_project guards against
     # (Phase 3 Finding 2): a bogus/nonexistent project path makes ArmorPaint
     # silently open its own empty default project instead of failing, which
     # would let the caller's script run against nothing while still
     # reporting ok: True.
-    if not os.path.isfile(project) or not project.lower().endswith(".arm"):
-        return {"ok": False, "stdout": None, "stderr": None,
-                "error": f"'{project}' is not an existing .arm project file"}
+    if not _is_arm_project_file(project):
+        return _failure(f"'{project}' is not an existing .arm project file",
+                        "stdout", "stderr")
 
     result = run_minic_script(cfg.binary, project, script, timeout_s)
     return {"ok": result.ok,
