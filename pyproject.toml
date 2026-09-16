@@ -34,6 +34,11 @@ ap-mcp = "armorpaint_mcp.server:main"
 [project.urls]
 Homepage = "https://github.com/graysonchalmers/Tool-ArmorPaintMCP"
 
+[tool.pytest.ini_options]
+markers = [
+    "integration: real ArmorPaint process required (needs AP_BINARY set to a working build)",
+]
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
