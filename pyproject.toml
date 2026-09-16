@@ -1,0 +1,42 @@
+[project]
+name = "ap-mcp"
+version = "0.1.0"
+description = "MCP server for driving ArmorPaint (batch export/rebake of existing projects) via its native CLI flags and scripting engine"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Grayson Chalmers" }]
+keywords = ["mcp", "armorpaint", "texturing", "pbr", "batch"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "License :: OSI Approved :: MIT License",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: Microsoft :: Windows",
+    "Topic :: Multimedia :: Graphics :: 3D Rendering",
+    "Topic :: Software Development :: Libraries",
+]
+dependencies = [
+    "mcp>=2,<3",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0.0"]
+
+[project.scripts]
+ap-mcp = "armorpaint_mcp.server:main"
+
+[project.urls]
+Homepage = "https://github.com/graysonchalmers/Tool-ArmorPaintMCP"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
