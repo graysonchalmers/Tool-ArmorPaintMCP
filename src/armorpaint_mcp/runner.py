@@ -149,29 +149,16 @@ def _terminate(proc) -> str:
     return stderr or ""
 
 
-def export_textures(binary: str, project: str, texture_type: str, preset: str,
-                     output_dir: str, timeout_s: float = DEFAULT_TIMEOUT_S) -> ExportResult:
-    """Launch ArmorPaint against `project` and export textures at `preset`.
-    Returns ExportResult(ok, files, error). Never raises for a normal
-    export-didn't-happen failure -- that's ExportResult(ok=False, ...)."""
-    os.makedirs(output_dir, exist_ok=True)
-
-    try:
-        expected = expected_output_files(binary, project, texture_type, preset,
-                                          output_dir)
-    except (OSError, ValueError, KeyError, TypeError) as exc:
-        # Fail before spawning a GUI process we'd have no way to judge.
-        return ExportResult(ok=False, files=[], error=(
-            f"could not determine which files preset '{preset}' exports: {exc}"))
-
-    before = _snapshot(expected)
-    proc = subprocess.Popen(
-        [binary, project, "--export-textures", texture_type, preset, output_dir],
-        # stdout is never read during the poll; an unread PIPE could fill the
-        # OS buffer and deadlock a long export. stderr IS read and reported.
-        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
-    )
-
+def _poll_and_terminate(proc: subprocess.Popen, expected: list[str],
+                        before: dict[str, tuple[int, int]], timeout_s: float,
+                        preset: str, output_dir: str) -> ExportResult:
+    """Poll `expected` until every file has been freshly (re)written since
+    `before`, or `timeout_s` elapses -- then terminate `proc` unconditionally
+    (it does not self-exit) and report the outcome. Shared by every caller
+    that launches an ArmorPaint process and waits for preset-defined files to
+    land: the completion rule (fingerprint-before, require-change,
+    confirm-stable) and the uncertain-outcome error message are identical
+    regardless of how the process was launched."""
     deadline = time.monotonic() + timeout_s
     complete = False
     try:
@@ -202,3 +189,28 @@ def export_textures(binary: str, project: str, texture_type: str, preset: str,
             f"{', '.join(os.path.basename(p) for p in unwritten) or 'none'}"
             f"{detail}"))
     return ExportResult(ok=True, files=expected)
+
+
+def export_textures(binary: str, project: str, texture_type: str, preset: str,
+                     output_dir: str, timeout_s: float = DEFAULT_TIMEOUT_S) -> ExportResult:
+    """Launch ArmorPaint against `project` and export textures at `preset`.
+    Returns ExportResult(ok, files, error). Never raises for a normal
+    export-didn't-happen failure -- that's ExportResult(ok=False, ...)."""
+    os.makedirs(output_dir, exist_ok=True)
+
+    try:
+        expected = expected_output_files(binary, project, texture_type, preset,
+                                          output_dir)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        # Fail before spawning a GUI process we'd have no way to judge.
+        return ExportResult(ok=False, files=[], error=(
+            f"could not determine which files preset '{preset}' exports: {exc}"))
+
+    before = _snapshot(expected)
+    proc = subprocess.Popen(
+        [binary, project, "--export-textures", texture_type, preset, output_dir],
+        # stdout is never read during the poll; an unread PIPE could fill the
+        # OS buffer and deadlock a long export. stderr IS read and reported.
+        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
+    )
+    return _poll_and_terminate(proc, expected, before, timeout_s, preset, output_dir)
