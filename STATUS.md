@@ -71,7 +71,7 @@
 | Item / File | State | Notes |
 |---|---|---|
 | `src/armorpaint_mcp/runner.py` (`run_minic_script`) | ✅ | subprocess.run with --background + --script against an already-open project; confirmed empirically to self-exit cleanly and run correctly, no poll-and-terminate needed (see docs/superpowers/plans/2026-09-16-phase4-run-script.md's "Empirical findings") |
-| `src/armorpaint_mcp/server.py` (`run_script`) | ✅ | registered as an MCP tool (smoke probe passing); same AP_ALLOWED_ROOTS sandboxing and phantom-default-project guard as inspect_project; end-to-end real calls verified by tests/test_run_script_integration.py |
+| `src/armorpaint_mcp/server.py` (`run_script`) | ✅ | registered as an MCP tool (smoke probe passing); AP_ALLOWED_ROOTS sandboxing and phantom-default-project guard cover the `project` path only, not the script body; end-to-end real calls verified by tests/test_run_script_integration.py. ⚠️ Not read-only/non-mutating: a script can call minic's `project_save()` and overwrite the caller's `.arm` file in place (confirmed empirically) -- intentional escape-hatch behavior, documented in the tool's docstring, not a gap. `timeout_s` (default 30s) is caller-overridable. |
 
 ---
 

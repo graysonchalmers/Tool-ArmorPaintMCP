@@ -73,12 +73,21 @@ source reading alone — matching this project's established convention:
 - Dynamic catalogs, not hardcoded enums, for anything that needs one — not
   applicable to this phase (`run_script` has no catalog surface).
 - Mutating operations default to a copy of the source project unless the
-  caller opts in — not applicable here: `run_script` never saves a project
-  (the opened project's in-memory state is discarded when the process exits;
-  nothing this tool does persists back to the `.arm` file on disk), so there
-  is no in-place-mutation risk to guard against the way `rebake_and_export`
-  would have needed to (that tool was dropped from scope entirely — see
-  `docs/PLAN.md` Phase 2's rescoping history).
+  caller opts in — deliberately NOT applied to `run_script`: the tool CAN
+  save/modify the project in place (a script that calls minic's
+  `project_save()` or similar persistence calls overwrites the caller's
+  `.arm` file on disk — confirmed empirically, script size/md5 changed after
+  a `script_fill_layer(); project_save(0);` run reported `ok=True`). This is
+  an accepted, intentional property of an unrestricted escape-hatch tool
+  (per the design spec's own framing: not gated behind an extra opt-in flag
+  the way the reference project's equivalent is, since minic scripts can't
+  be statically analyzed to detect a `project_save()` call before running
+  them, and a copy-by-default mechanism would defeat the tool's actual
+  purpose of acting on the real project for exactly the cases that need it).
+  It is a documented risk the caller is responsible for (back up the project
+  first if its current state matters), not a gap to close the way
+  `rebake_and_export` would have needed guarding (that tool was dropped from
+  scope entirely — see `docs/PLAN.md` Phase 2's rescoping history).
 - Secrets/paths come from env, never hardcoded.
 - `AP_ALLOWED_ROOTS` enforced on every path before it reaches the subprocess
   (design spec "Safety").

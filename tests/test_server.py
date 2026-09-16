@@ -5,7 +5,7 @@ import pytest
 
 from armorpaint_mcp import server
 from armorpaint_mcp.catalog import CatalogError
-from armorpaint_mcp.runner import ExportResult, ApiResult, ScriptResult
+from armorpaint_mcp.runner import DEFAULT_TIMEOUT_S, ExportResult, ApiResult, ScriptResult
 from armorpaint_mcp.server import (mcp, reexport_project, create_procedural_material,
                                    list_available_presets, inspect_project, run_script)
 
@@ -440,13 +440,36 @@ def test_run_script_calls_runner_and_returns_result(tmp_path):
          patch("armorpaint_mcp.server.run_minic_script") as mock_run:
         mock_cfg.return_value.binary = str(tmp_path / "ArmorPaint.exe")
         mock_cfg.return_value.allowed_roots = []
+        # NOTE: this "out" is a mocked value for plumbing verification only --
+        # the real ArmorPaint binary's script-facing console output
+        # (console_log() etc.) writes via WriteConsoleW directly to the
+        # console handle, which subprocess pipe capture does not see on this
+        # platform, so stdout/stderr are typically empty in practice even on
+        # a successful real run. This test only checks that server.run_script
+        # forwards whatever runner.run_minic_script returns.
         mock_run.return_value = ScriptResult(ok=True, stdout="out", stderr="")
 
         result = run_script(project=str(project), script="void main() {}")
 
     assert result == {"ok": True, "stdout": "out", "stderr": "", "error": None}
     mock_run.assert_called_once_with(
-        mock_cfg.return_value.binary, str(project), "void main() {}")
+        mock_cfg.return_value.binary, str(project), "void main() {}", DEFAULT_TIMEOUT_S)
+
+
+def test_run_script_passes_custom_timeout_s_through(tmp_path):
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
+        mock_cfg.return_value.binary = str(tmp_path / "ArmorPaint.exe")
+        mock_cfg.return_value.allowed_roots = []
+        mock_run.return_value = ScriptResult(ok=True, stdout="", stderr="")
+
+        run_script(project=str(project), script="void main() {}", timeout_s=120.0)
+
+    mock_run.assert_called_once_with(
+        mock_cfg.return_value.binary, str(project), "void main() {}", 120.0)
 
 
 def test_run_script_nulls_stdout_stderr_on_runner_failure(tmp_path):
@@ -472,5 +495,5 @@ def test_run_script_is_registered_as_an_mcp_tool():
     by_name = {t.name: t for t in tools}
     assert "run_script" in by_name, sorted(by_name)
     tool = by_name["run_script"]
-    assert set(tool.input_schema["properties"]) == {"project", "script"}
+    assert set(tool.input_schema["properties"]) == {"project", "script", "timeout_s"}
     assert set(tool.input_schema.get("required", [])) == {"project", "script"}

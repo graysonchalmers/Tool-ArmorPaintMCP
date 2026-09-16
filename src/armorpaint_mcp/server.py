@@ -9,8 +9,8 @@ from armorpaint_mcp.doctor import run_check
 from armorpaint_mcp.catalog import (CatalogError, extract_project_state,
                                     layer_blend_modes, scene_objects)
 from armorpaint_mcp.paths import ensure_within_roots, PathNotAllowed
-from armorpaint_mcp.runner import (export_textures, list_export_presets, run_api,
-                                   run_minic_script, run_procedural_material)
+from armorpaint_mcp.runner import (DEFAULT_TIMEOUT_S, export_textures, list_export_presets,
+                                   run_api, run_minic_script, run_procedural_material)
 from armorpaint_mcp.script_gen import generate_script, NodeSpecError
 
 # Startup is lazy: importing this module must NOT validate config, so
@@ -188,7 +188,7 @@ def inspect_project(project: str) -> dict:
 mcp.tool()(inspect_project)
 
 
-def run_script(project: str, script: str) -> dict:
+def run_script(project: str, script: str, timeout_s: float = DEFAULT_TIMEOUT_S) -> dict:
     """Escape hatch: run an arbitrary minic script against an existing .arm
     project via ArmorPaint's own --script flag, for anything the
     purpose-built tools (reexport_project, create_procedural_material,
@@ -199,12 +199,36 @@ def run_script(project: str, script: str) -> dict:
     Same trust level as this project's other tools -- not gated behind an
     extra opt-in flag.
 
+    WARNING: this tool CAN modify and save the project in place. Minic
+    registers project_save() (and similar persistence calls) as part of its
+    normal API surface, so a script that calls it will overwrite the
+    caller's .arm file on disk -- confirmed empirically. This is an
+    intentional, accepted property of an unrestricted escape-hatch tool
+    (see the design spec's framing for why it is deliberately not gated
+    behind a copy-by-default or allow-save flag), not a bug. If you care
+    about the project's current state, back it up yourself before calling
+    this with a script you haven't fully reviewed.
+
     IMPORTANT: ArmorPaint gives no diagnostic signal for a script runtime
     error (confirmed empirically -- calling an undefined function exits 0
     with empty output, identical to success). ok=True here means only "the
     ArmorPaint process completed", not "the script did what you expected" --
     verify results yourself (e.g. check that expected output files appeared,
-    or call inspect_project afterward). Bounded by AP_ALLOWED_ROOTS when set.
+    or call inspect_project afterward). The `project` path is bounded by
+    AP_ALLOWED_ROOTS when set; the script body itself is not sandboxed and
+    can read/write anywhere the ArmorPaint process has OS-level permission
+    to.
+
+    NOTE: ArmorPaint's script-facing console output (console_log() and
+    friends) writes directly to the console handle (WriteConsoleW), which is
+    not captured by this tool's subprocess piping on this platform -- in
+    practice `stdout`/`stderr` are typically empty even on a fully
+    successful run. Don't rely on them as a diagnostic channel.
+
+    `timeout_s` (default 30s) bounds how long the ArmorPaint process is
+    allowed to run before this call gives up and reports an uncertain
+    outcome -- raise it for scripts you expect to take longer.
+
     Returns {"ok": bool, "stdout": str | None, "stderr": str | None,
     "error": str | None}."""
     cfg = _ensure_ready()
@@ -223,7 +247,7 @@ def run_script(project: str, script: str) -> dict:
         return {"ok": False, "stdout": None, "stderr": None,
                 "error": f"'{project}' is not an existing .arm project file"}
 
-    result = run_minic_script(cfg.binary, project, script)
+    result = run_minic_script(cfg.binary, project, script, timeout_s)
     return {"ok": result.ok,
             "stdout": result.stdout if result.ok else None,
             "stderr": result.stderr if result.ok else None,
