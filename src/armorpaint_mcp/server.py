@@ -69,10 +69,16 @@ mcp.tool()(reexport_project)
 
 def create_procedural_material(node_spec: dict, output_dir: str,
                                preset: str = "generic") -> dict:
-    """Build a small procedural material -- {"type": "checker", "params":
-    {"scale": float, "color1": [r,g,b], "color2": [r,g,b]}} or {"type":
-    "solid", "params": {"color": [r,g,b]}}, all params optional -- on a
-    fresh default project and export it at `preset`. Everything happens in
+    """Build a small procedural material on a fresh default project and
+    export it at `preset`. `node_spec` is one node wired straight to the
+    material output's Base Color, all params optional:
+    {"type": "checker", "params": {"scale": float, "color1": [r,g,b],
+    "color2": [r,g,b]}}, {"type": "solid", "params": {"color": [r,g,b]}},
+    {"type": "noise", "params": {"scale": float, "detail": float,
+    "roughness": float, "lacunarity": float, "distortion": float}}, or
+    {"type": "voronoi", "params": {"scale": float, "detail": float,
+    "roughness": float, "lacunarity": float, "randomness": float}}.
+    Everything happens in
     one ArmorPaint process (build the graph, render it into the paint
     layer, export): saving to .arm and exporting separately does not
     preserve the rendered pixels on this build -- see docs/PLAN.md's

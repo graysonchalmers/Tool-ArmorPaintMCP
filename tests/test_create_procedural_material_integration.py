@@ -38,3 +38,29 @@ def test_checker_material_produces_a_genuinely_painted_texture(tmp_path):
     assert len(sampled_colors) > 1, (
         f"expected a genuinely painted checker pattern, got a single "
         f"uniform color across all sample points: {sampled_colors}")
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("node_type", ["noise", "voronoi"])
+def test_procedural_texture_nodes_produce_genuinely_painted_output(tmp_path, node_type):
+    output_dir = tmp_path / "out"
+
+    result = create_procedural_material(
+        node_spec={"type": node_type},
+        output_dir=str(output_dir),
+        preset="generic",
+    )
+
+    assert result["error"] is None, result["error"]
+    assert result["ok"] is True
+
+    base_color_file = next(f for f in result["files"] if f.endswith("_base.png"))
+    image = Image.open(base_color_file).convert("RGB")
+    sampled_colors = {
+        image.getpixel((x, y))
+        for x in (0, image.width // 4, image.width // 2, image.width - 1)
+        for y in (0, image.height // 4, image.height // 2, image.height - 1)
+    }
+    assert len(sampled_colors) > 1, (
+        f"expected a genuinely painted {node_type} pattern, got a single "
+        f"uniform color across all sample points: {sampled_colors}")

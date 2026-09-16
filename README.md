@@ -39,23 +39,26 @@ exported, not visual richness. Same project, two export presets:
 |:--:|:--:|
 | ![generic preset base color export](docs/images/gallery/generic_base.png) | ![unreal preset packed export](docs/images/gallery/unreal_packed.png) |
 
-Real procedural output from `create_procedural_material` (Phase 2) — a
-checker-pattern node graph built, rendered, and exported in a single
-ArmorPaint process, on the default cube-bevel primitive:
+Real procedural output from `create_procedural_material` — one node graph
+built, rendered, and exported in a single ArmorPaint process, on the default
+cube-bevel primitive. All four node types below (`"checker"`, `"solid"`,
+`"noise"`, `"voronoi"`) are shipped, callable tool inputs, not example-only
+imagery — [scripts/generate_gallery.py](scripts/generate_gallery.py)
+regenerates all four through the real tool:
 
-![procedural checker material, base color export](docs/images/gallery/procedural_checker_base.png)
-
-ArmorPaint's minic scripting surface reaches further than the two node types
-`create_procedural_material` ships (a deliberate v1 scope decision, not a
-platform limit — see [docs/PLAN.md](docs/PLAN.md) Phase 2). `TEX_NOISE` and
-`TEX_VORONOI` both work the same way through the same `script_material_*`
-calls; [scripts/generate_gallery.py](scripts/generate_gallery.py) renders
-them (hand-written minic, outside the shipped tool, for example imagery
-only) to show what the underlying engine is actually capable of:
+| Checker | Solid |
+|:--:|:--:|
+| ![procedural checker material, base color export](docs/images/gallery/procedural_checker_base.png) | ![procedural solid material, base color export](docs/images/gallery/procedural_solid_base.png) |
 
 | Noise | Voronoi |
 |:--:|:--:|
 | ![procedural noise material, base color export](docs/images/gallery/procedural_noise_base.png) | ![procedural voronoi material, base color export](docs/images/gallery/procedural_voronoi_base.png) |
+
+ArmorPaint's material-node scripting surface reaches much further than
+these four — 62 node types ship in the engine (`paint/sources/nodes_material/`),
+and today's `create_procedural_material` can only wire a single node
+straight to the output, not compose a real graph. That's the current
+ceiling, tracked as open scope, not a platform limit.
 
 ## How it works
 

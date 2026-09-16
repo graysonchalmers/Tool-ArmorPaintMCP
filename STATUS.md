@@ -48,7 +48,7 @@
 
 | Item / File | State | Notes |
 |---|---|---|
-| `src/armorpaint_mcp/script_gen.py` (`generate_script`) | ✅ | builds a minic script from a whitelisted node-graph spec — exactly two node types shipped, `"checker"` (`TEX_CHECKER`) and `"solid"` (`RGB`); exercised by both unit tests and the real integration run |
+| `src/armorpaint_mcp/script_gen.py` (`generate_script`) | ✅ | builds a minic script from a whitelisted node-graph spec — four node types shipped: `"checker"` (`TEX_CHECKER`), `"solid"` (`RGB`), `"noise"` (`TEX_NOISE`), `"voronoi"` (`TEX_VORONOI`, both added 2026-09-16, promoted from `scripts/generate_gallery.py`'s demo-only minic once proven); exercised by unit tests (`tests/test_script_gen.py`, 92 passed total) and real integration runs (`tests/test_create_procedural_material_integration.py`, 8 passed with `AP_BINARY` set, incl. parametrized noise/voronoi pixel-content checks) |
 | `src/armorpaint_mcp/runner.py` (`run_procedural_material`) | ✅ | single-process launch: `--script <file>` (no `--background`), reuses Phase 1's poll-and-terminate helper; real run produced a non-flat exported PNG |
 | `src/armorpaint_mcp/server.py` (`create_procedural_material`) | ✅ | end-to-end real call verified via `test_checker_material_produces_a_genuinely_painted_texture`: exported base-color PNG samples multiple distinct colors (genuinely painted, not uniform) |
 | `src/armorpaint_mcp/server.py` (`list_available_presets`) | ✅ | registered as an MCP tool this phase (written/tested in `runner.py` since Phase 1, previously unregistered); covered by unit tests |

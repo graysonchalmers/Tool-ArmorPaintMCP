@@ -1,10 +1,12 @@
 """Generates minic scripts for procedural material authoring.
 
-v1 supports exactly two node types -- "checker" and "solid" -- each a
-single node wired straight to OUTPUT_MATERIAL_PBR's Base Color input
-(socket 0). This is deliberately narrow (YAGNI): a general multi-node
-graph DSL is future scope, not this phase's job -- see docs/PLAN.md's
-Phase 2 section for why the scope stops here.
+v1 supports four node types -- "checker", "solid", "noise", "voronoi" --
+each a single node wired straight to OUTPUT_MATERIAL_PBR's Base Color
+input. This is deliberately narrow (YAGNI): a general multi-node graph
+DSL is future scope, not this phase's job -- see docs/PLAN.md's Phase 2
+section for why the scope stops here. noise/voronoi were proven working
+via scripts/generate_gallery.py before being promoted into this shipped
+whitelist -- same minic, same param defaults.
 
 Every generated script does the same four things in order: create a fresh
 default project, build the one node the spec asks for and connect it to
@@ -74,9 +76,48 @@ def _solid_node_lines(params: dict) -> list[str]:
     ]
 
 
+def _noise_node_lines(params: dict) -> list[str]:
+    scale = _number("scale", params.get("scale", 6.0))
+    detail = _number("detail", params.get("detail", 4.0))
+    roughness = _number("roughness", params.get("roughness", 0.6))
+    lacunarity = _number("lacunarity", params.get("lacunarity", 2.0))
+    distortion = _number("distortion", params.get("distortion", 0.0))
+    return [
+        '\tui_node_t *src = script_material_create_node_at("TEX_NOISE", -400.0, 0.0);',
+        f'\tscript_material_set_float(src, 1, 1, {scale});',
+        f'\tscript_material_set_float(src, 1, 2, {detail});',
+        f'\tscript_material_set_float(src, 1, 3, {roughness});',
+        f'\tscript_material_set_float(src, 1, 4, {lacunarity});',
+        f'\tscript_material_set_float(src, 1, 5, {distortion});',
+        # TEX_NOISE puts Color at output socket 1, not 0 -- see each node's
+        # own *_init() in ArmorPaint's nodes_material/ source.
+        '\tscript_material_connect(src, 1, out, 0);',
+    ]
+
+
+def _voronoi_node_lines(params: dict) -> list[str]:
+    scale = _number("scale", params.get("scale", 8.0))
+    detail = _number("detail", params.get("detail", 0.0))
+    roughness = _number("roughness", params.get("roughness", 0.5))
+    lacunarity = _number("lacunarity", params.get("lacunarity", 2.0))
+    randomness = _number("randomness", params.get("randomness", 1.0))
+    return [
+        '\tui_node_t *src = script_material_create_node_at("TEX_VORONOI", -400.0, 0.0);',
+        f'\tscript_material_set_float(src, 1, 1, {scale});',
+        f'\tscript_material_set_float(src, 1, 2, {detail});',
+        f'\tscript_material_set_float(src, 1, 3, {roughness});',
+        f'\tscript_material_set_float(src, 1, 4, {lacunarity});',
+        f'\tscript_material_set_float(src, 1, 5, {randomness});',
+        # TEX_VORONOI also puts Color at output socket 1, not 0.
+        '\tscript_material_connect(src, 1, out, 0);',
+    ]
+
+
 _NODE_BUILDERS = {
     "checker": _checker_node_lines,
     "solid": _solid_node_lines,
+    "noise": _noise_node_lines,
+    "voronoi": _voronoi_node_lines,
 }
 
 
