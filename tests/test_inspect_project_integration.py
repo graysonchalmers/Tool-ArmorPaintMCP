@@ -9,6 +9,8 @@ import pytest
 from armorpaint_mcp.server import inspect_project
 
 FIXTURE = os.path.join(os.path.dirname(__file__), "fixtures", "sample_project.arm")
+FIXTURE_MULTI = os.path.join(os.path.dirname(__file__), "fixtures",
+                             "sample_project_multi.arm")
 
 
 @pytest.mark.integration
@@ -21,3 +23,14 @@ def test_inspect_project_reports_real_object_from_the_fixture():
     assert result["objects"][0]["name"]  # a real, non-empty object name
     assert isinstance(result["materials"], list)
     assert isinstance(result["layers"], list)
+
+
+@pytest.mark.integration
+def test_inspect_project_reports_all_materials_in_a_multi_material_project():
+    result = inspect_project(project=FIXTURE_MULTI)
+
+    assert result["error"] is None, result["error"]
+    assert result["ok"] is True
+    assert len(result["materials"]) == 2
+    names = [m["name"] for m in result["materials"]]
+    assert len(set(names)) == 2  # two distinct materials, not the same one twice
