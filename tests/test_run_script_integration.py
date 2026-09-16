@@ -48,3 +48,16 @@ def test_run_script_ok_true_does_not_prove_the_script_succeeded(tmp_path):
 
     assert result["ok"] is True
     assert result["error"] is None
+
+
+@pytest.mark.integration
+def test_run_script_reports_a_real_timeout():
+    """Real-binary timeout path (Phase 4 final-review Minor finding: only a
+    mocked TimeoutExpired existed for this before). timeout_s=0.01 is far
+    too short for the real ArmorPaint.exe process to even finish starting,
+    forcing subprocess.run's actual TimeoutExpired rather than a mocked
+    one."""
+    result = run_script(project=FIXTURE, script="void main() {}", timeout_s=0.01)
+
+    assert result["ok"] is False
+    assert "timed out after 0.01s" in result["error"]

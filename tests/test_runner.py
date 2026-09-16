@@ -563,6 +563,29 @@ def test_run_api_reports_timeout(tmp_path):
     assert "timed out after 5.0s" in result.error
 
 
+def test_run_api_tolerates_decode_errors_instead_of_raising(tmp_path):
+    """A non-ASCII object/material name could round-trip through the OS's
+    locale encoding in a way Python's default strict decode doesn't expect.
+    errors='replace' means a decode hiccup degrades to U+FFFD replacement
+    characters instead of raising UnicodeDecodeError and losing the whole
+    --api result (Phase 3 final-review Minor finding)."""
+    binary = tmp_path / "ArmorPaint.exe"
+    binary.write_text("")
+    project = tmp_path / "project.arm"
+    project.write_text("")
+
+    captured = {}
+
+    def fake_run(args, **kwargs):
+        captured.update(kwargs)
+        return MagicMock(returncode=0, stdout="ok", stderr="")
+
+    with patch("armorpaint_mcp.runner.subprocess.run", side_effect=fake_run):
+        run_api(str(binary), str(project))
+
+    assert captured["errors"] == "replace"
+
+
 def test_run_minic_script_returns_stdout_on_success(tmp_path):
     binary = tmp_path / "ArmorPaint.exe"
     binary.write_text("")

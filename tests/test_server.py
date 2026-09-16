@@ -33,6 +33,7 @@ def test_reexport_project_returns_error_for_unknown_preset(tmp_path):
     assert result["ok"] is False
     assert "not_a_real_preset" in result["error"]
     assert "generic" in result["error"]
+    assert result["files"] is None
 
 
 def test_reexport_project_rejects_path_outside_allowed_roots(tmp_path):
@@ -52,6 +53,7 @@ def test_reexport_project_rejects_path_outside_allowed_roots(tmp_path):
 
     assert result["ok"] is False
     assert "allowed roots" in result["error"]
+    assert result["files"] is None
 
 
 def test_reexport_project_calls_runner_and_returns_files(tmp_path):
@@ -129,6 +131,7 @@ def test_create_procedural_material_returns_error_for_unknown_preset(tmp_path):
     assert result["ok"] is False
     assert "not_a_real_preset" in result["error"]
     assert "generic" in result["error"]
+    assert result["files"] is None
 
 
 def test_create_procedural_material_rejects_path_outside_allowed_roots(tmp_path):
@@ -148,6 +151,7 @@ def test_create_procedural_material_rejects_path_outside_allowed_roots(tmp_path)
 
     assert result["ok"] is False
     assert "allowed roots" in result["error"]
+    assert result["files"] is None
 
 
 def test_create_procedural_material_rejects_non_generic_preset(tmp_path):
@@ -169,6 +173,7 @@ def test_create_procedural_material_rejects_non_generic_preset(tmp_path):
 
     assert result["ok"] is False
     assert "only supports the 'generic' preset" in result["error"]
+    assert result["files"] is None
     mock_run.assert_not_called()
 
 
@@ -185,6 +190,7 @@ def test_create_procedural_material_rejects_invalid_node_spec(tmp_path):
 
     assert result["ok"] is False
     assert "unsupported node_spec type" in result["error"]
+    assert result["files"] is None
 
 
 def test_create_procedural_material_calls_runner_and_returns_files(tmp_path):
@@ -318,6 +324,24 @@ def test_inspect_project_surfaces_catalog_parse_error(tmp_path):
     assert "no state block" in result["error"]
 
 
+def test_inspect_project_surfaces_scene_objects_parse_error(tmp_path):
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_api") as mock_run_api, \
+         patch("armorpaint_mcp.server.extract_project_state", return_value={}), \
+         patch("armorpaint_mcp.server.scene_objects",
+               side_effect=CatalogError("no scene objects section")):
+        mock_cfg.return_value.binary = str(tmp_path / "ArmorPaint.exe")
+        mock_cfg.return_value.allowed_roots = []
+        mock_run_api.return_value = ApiResult(ok=True, text="text")
+
+        result = inspect_project(project=str(project))
+
+    assert result["ok"] is False
+    assert "no scene objects section" in result["error"]
+
+
 def test_inspect_project_rejects_nonexistent_project_path(tmp_path):
     """Confirmed against the real ArmorPaint binary: a nonexistent (or
     non-.arm) project path makes ArmorPaint silently ignore the bogus
@@ -430,6 +454,8 @@ def test_run_script_rejects_existing_file_with_wrong_extension(tmp_path):
 
     assert result["ok"] is False
     assert "not an existing .arm project file" in result["error"]
+    assert result["stdout"] is None
+    assert result["stderr"] is None
 
 
 def test_run_script_calls_runner_and_returns_result(tmp_path):

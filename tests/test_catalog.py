@@ -81,8 +81,19 @@ def test_scene_objects_parses_name_location_size():
     }]
 
 
-def test_scene_objects_empty_list_when_no_objects_section():
-    assert scene_objects("nothing here") == []
+def test_scene_objects_raises_when_marker_missing():
+    with pytest.raises(CatalogError, match="Scene objects in world space"):
+        scene_objects("nothing here")
+
+
+def test_scene_objects_empty_list_when_section_present_but_no_objects():
+    text = (
+        "Scene objects in world space, z axis up:\n"
+        "\n"
+        "script_shape_add() shapes:\n"
+        '"cone"\n'
+    )
+    assert scene_objects(text) == []
 
 
 def test_layer_blend_modes_has_18_entries_and_no_exclusion():
