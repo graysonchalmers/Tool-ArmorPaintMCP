@@ -14,6 +14,51 @@ progress.
 > (2) Resolution has no CLI flag or confirmed minic setter, so it's dropped
 > from `reexport_project`'s v1 signature — `preset` only.
 
+> **Amendment 2 (2026-09-15, Phase 2 planning):** Phase 2 was rescoped
+> twice after hands-on spiking invalidated the original `rebake_and_export`
+> plan. Findings, all confirmed empirically against the real local build:
+>
+> 1. **Baking is unreachable from any script/API in this build.**
+>    `bake_texture_node_run` (AO/curvature/normal-from-highpoly bakes) is a
+>    `static` C function called only from `bake_texture_node_button`, a
+>    GUI-button callback registered in `ui_nodes_custom_buttons` — a
+>    UI-only dispatch table, not something minic or the CLI can reach.
+>    Structurally blocked, not just untried.
+> 2. **minic's struct access is curated, not general C.** It exposes
+>    pre-registered native functions and a handful of specific structs used
+>    in the shipped script templates (e.g. `context_t`, whose fields the
+>    official `rotate.c` template writes directly) — but arbitrary field
+>    chains on other structs silently abort script execution with zero
+>    error output. `int n = p->assets->length;` on `project_t` is enough to
+>    kill the script. This blocks reading which combo-index a newly
+>    imported asset occupies, which blocks texture-set swapping into an
+>    existing project. Isolated via a 3-step spike ladder (baseline script
+>    → +1 line → +1 more line) to the exact breaking statement — this is
+>    the reliable way to debug a minic silent-failure: bisect one
+>    statement at a time, since there's no other diagnostic signal.
+> 3. **Procedural material authoring works, single-process only.**
+>    `script_material_create_node[_at]`/`connect`/`set_float`/`set_color`
+>    (already used in Phase 1's fixture generation) plus two more
+>    minic-registered functions — `script_fill_layer()` and
+>    `export_texture_run(path, bake_material)` — together render a node
+>    graph into the paint layer and export it, entirely within one
+>    `--script` process. Confirmed with a checker-pattern graph producing a
+>    correctly UV-masked checkerboard PNG. **Critically, this only works
+>    within a single process.** Building the graph via `--script`, saving
+>    to `.arm`, then exporting via a *second* process (i.e. Phase 1's
+>    `reexport_project` pattern) silently produces flat, unpainted output —
+>    verified with two separate spikes (solid RGB fill, checker fill) that
+>    both failed identically through the save/reload path and both
+>    succeeded through the same-process path. The `.arm` round-trip does
+>    not preserve the rendered `texpaint` buffer for a script-authored
+>    project the way it does for one saved from the GUI; not investigated
+>    further since the single-process path fully satisfies the use case.
+>
+> Net effect: Phase 2 became `create_procedural_material` — a script
+> generator + single-process `--script` run (graph build → fill → export),
+> not a rebake tool. See `docs/PLAN.md`'s Phase 2 section for the full
+> scope and gate.
+
 ## Problem
 
 Grayson wants an MCP server that lets an AI assistant drive

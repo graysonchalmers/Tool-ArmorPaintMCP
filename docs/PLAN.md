@@ -44,19 +44,58 @@ build against a small sample `.arm` project (created headlessly via
 the expected texture files land on disk. Unit tests for arg-building pass
 without ArmorPaint running.
 
-## Phase 2 — `rebake_and_export`
+## Phase 2 — `create_procedural_material`
 
-Rebaking needs a minic script (baking isn't a CLI flag). Before writing
-`catalog.py`/`templates/`, hands-on verify against a real project that
-`minic_api_list.h`'s registered functions actually cover bake invocation and
-texture-set swaps (flagged as an open item in the design spec — this
-assumption is not yet confirmed). Operates on a **copy** of the source
-project by default; `in_place: true` opts out.
+Rescoped twice during hands-on spiking (2026-09-15) after the original
+`rebake_and_export` scope turned out to rest on capabilities that don't
+exist in this build. In order:
 
-**Gate:** integration smoke test rebakes a sample project and confirms new
-bake output differs from the pre-rebake state (e.g. a content hash or mtime
-check), without mutating the original source file (unless `in_place: true`
-was passed).
+1. **Mesh-detail baking (AO/curvature/normal-from-highpoly) is unreachable
+   from any script or API.** `bake_texture_node_run` is a `static` C
+   function invoked only from `bake_texture_node_button`, which is
+   registered solely in a GUI-only button-callback map
+   (`ui_nodes_custom_buttons`). No CLI flag, no minic function, no
+   workaround — confirmed by reading the call chain, not just grepping for
+   an entry point.
+2. **Texture-set swapping into an existing project is also unreachable.**
+   It needs the newly-imported asset's combo-index, which requires reading
+   `project_t->assets->length` from minic — and minic's struct access is
+   curated, not general C: `int n = p->assets->length;` silently aborts
+   script execution with no error. Isolated with a 3-step spike ladder
+   (baseline → +1 line → +1 more line) to the exact breaking statement.
+3. **Procedural material authoring (build a node graph, render it into the
+   paint layer, export) is real and confirmed working** — but only as a
+   **single-process** operation. `script_fill_layer()` and
+   `export_texture_run(path, bake_material)` are both minic-registered and
+   both work correctly when called in the same `--script` invocation that
+   built the graph. Saving to `.arm` and re-exporting via a *separate*
+   process (i.e. reusing Phase 1's `reexport_project` on a
+   script-authored project) silently loses the rendered pixels — verified
+   with two spikes (solid-color fill and a checker-pattern fill) that
+   produced flat, unpainted output through the save/reload path and
+   correct output through the same-process path. Root cause not
+   pinned down further than "the `.arm` round-trip doesn't preserve the
+   rendered `texpaint` buffer the way project save/reload of a
+   GUI-authored project does" — not worth chasing further since the
+   single-process path is fully sufficient.
+
+**Scope:** one new tool generates a minic script from a small, whitelisted
+node-graph spec (node type + params + connections — chosen from minic's
+real registered node set: `TEX_CHECKER`, `RGB`, `TEX_NOISE`,
+`TEX_VORONOI`, `TEX_GRADIENT`, `TEX_WAVE`, `MIX_RGB`, etc.), writes it to a
+temp file, launches ArmorPaint with `--script <file>` (no `--background`,
+per Phase 1's established GUI-process-plus-poll pattern), and the script
+itself does project setup → build graph → `script_fill_layer()` →
+`export_texture_run()` in one process before exiting. Also exposes
+`list_export_presets` (already written and tested in `runner.py` from
+Phase 1, never registered as a tool) since it's a one-line addition once
+this phase touches `server.py` again.
+
+**Gate:** integration smoke test runs the tool with a small procedural
+graph (e.g. checker or noise) against the default primitive mesh and
+asserts the exported base-color PNG is *not* uniform (i.e. genuinely
+painted, not the flat default) — a real content check, not just
+file-exists.
 
 ## Phase 3 — `list_export_presets` + `inspect_project` + dynamic catalog
 
