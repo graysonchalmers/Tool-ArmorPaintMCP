@@ -121,3 +121,22 @@ def scene_objects(api_text: str) -> list[dict]:
         }
         for name, loc, size in pattern.findall(api_text)
     ]
+
+
+_MESH_EDIT_PATCH_FUNCTIONS = [
+    "util_mesh_decimate", "util_mesh_smooth", "util_mesh_bevel",
+    "util_mesh_subdivide", "util_mesh_merge_geometry", "util_mesh_duplicate",
+    "plugin_uv_unwrap_button",
+]
+
+
+def mesh_edit_patch_missing(api_text: str) -> list[str]:
+    """Which of the mesh-edit minic functions this project's Phase 5 tools
+    depend on are NOT present in `api_text` (ArmorPaint.exe --api's static
+    output, no project needed). Empty list means the connected AP_BINARY
+    carries the scoped local patch (see ROADMAP.md's "Patch policy"); a
+    non-empty list means it's running stock ArmorPaint, where these calls
+    would silently abort the whole script (confirmed empirically during the
+    2026-09-16 spike) while still reporting ok=True -- the exact trap this
+    check exists to catch before a caller hits it."""
+    return [name for name in _MESH_EDIT_PATCH_FUNCTIONS if name not in api_text]

@@ -10,6 +10,7 @@ import os
 import subprocess
 from dataclasses import dataclass
 
+from armorpaint_mcp.catalog import mesh_edit_patch_missing
 from armorpaint_mcp.config import Config, load_config
 
 
@@ -51,6 +52,26 @@ def check_setup(cfg: Config) -> list[Check]:
                                 else f"unexpected exit code {out.returncode}"))
         except (OSError, subprocess.TimeoutExpired) as exc:
             checks.append(Check("binary launches", False, str(exc)))
+
+    if cfg.binary and os.path.isfile(cfg.binary):
+        try:
+            out = subprocess.run([cfg.binary, "--api"], capture_output=True,
+                                  text=True, timeout=15)
+            missing = mesh_edit_patch_missing(out.stdout) if out.returncode == 0 else None
+            if missing is None:
+                checks.append(Check("mesh-edit patch", False,
+                                    f"'--api' exited {out.returncode}, could not check"))
+            elif missing:
+                checks.append(Check("mesh-edit patch", False,
+                                    f"missing minic registration(s): {', '.join(missing)} "
+                                    "-- this AP_BINARY is running stock ArmorPaint. Phase 5's "
+                                    "mesh-edit tools (decimate_mesh, etc.) need the scoped "
+                                    "local patch built -- see ROADMAP.md's \"Patch policy\"."))
+            else:
+                checks.append(Check("mesh-edit patch", True,
+                                    "all 7 mesh-edit functions registered"))
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            checks.append(Check("mesh-edit patch", False, str(exc)))
 
     # Check writability without creating anything: walk up to the nearest
     # existing ancestor and test that. The server makedirs the output dir at
