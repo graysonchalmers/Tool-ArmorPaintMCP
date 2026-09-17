@@ -8,7 +8,8 @@ from armorpaint_mcp.catalog import CatalogError
 from armorpaint_mcp.runner import DEFAULT_TIMEOUT_S, ExportResult, ApiResult, ScriptResult
 from armorpaint_mcp.server import (mcp, reexport_project, create_procedural_material,
                                    list_available_presets, inspect_project, run_script,
-                                   decimate_mesh, bevel_mesh, subdivide_mesh)
+                                   decimate_mesh, bevel_mesh, subdivide_mesh, smooth_mesh,
+                                   duplicate_mesh)
 
 
 @pytest.fixture(autouse=True)
@@ -643,3 +644,49 @@ def test_subdivide_mesh_is_registered_as_an_mcp_tool():
     by_name = {t.name: t for t in tools}
     assert "subdivide_mesh" in by_name, sorted(by_name)
     assert set(by_name["subdivide_mesh"].input_schema.get("required", [])) == {"project"}
+
+
+def test_smooth_mesh_calls_the_right_minic_function(tmp_path):
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
+    output_project = tmp_path / "out.arm"
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
+        mock_cfg.return_value.binary = "ArmorPaint.exe"
+        mock_cfg.return_value.allowed_roots = []
+        mock_run.return_value = ScriptResult(ok=True, stdout="", stderr="")
+
+        result = smooth_mesh(project=str(project), output_project=str(output_project))
+
+    assert result["ok"] is True
+    assert "util_mesh_smooth();" in mock_run.call_args[0][2]
+
+
+def test_duplicate_mesh_calls_the_right_minic_function(tmp_path):
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
+    output_project = tmp_path / "out.arm"
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
+        mock_cfg.return_value.binary = "ArmorPaint.exe"
+        mock_cfg.return_value.allowed_roots = []
+        mock_run.return_value = ScriptResult(ok=True, stdout="", stderr="")
+
+        result = duplicate_mesh(project=str(project), output_project=str(output_project))
+
+    assert result["ok"] is True
+    assert "util_mesh_duplicate();" in mock_run.call_args[0][2]
+
+
+def test_smooth_mesh_is_registered_as_an_mcp_tool():
+    tools = asyncio.run(mcp.list_tools())
+    by_name = {t.name: t for t in tools}
+    assert "smooth_mesh" in by_name, sorted(by_name)
+
+
+def test_duplicate_mesh_is_registered_as_an_mcp_tool():
+    tools = asyncio.run(mcp.list_tools())
+    by_name = {t.name: t for t in tools}
+    assert "duplicate_mesh" in by_name, sorted(by_name)

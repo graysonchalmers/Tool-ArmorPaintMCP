@@ -181,6 +181,45 @@ def subdivide_mesh(project: str, output_project: str | None = None,
 mcp.tool()(subdivide_mesh)
 
 
+def smooth_mesh(project: str, output_project: str | None = None,
+                in_place: bool = False, timeout_s: float = DEFAULT_TIMEOUT_S) -> dict:
+    """Smooth the project's mesh via ArmorPaint's own smoothing algorithm
+    (util_mesh_smooth -- exposed to --script by this project's scoped local
+    patch; see ROADMAP.md's "Patch policy"). Does not change vertex/face
+    count (confirmed empirically), only vertex positions and normals.
+    Operates on a copy of `project` by default -- pass in_place=True to
+    mutate `project` itself instead, in which case output_project must be
+    omitted. Requires AP_BINARY to be a build carrying the mesh-edit patch
+    (run `ap-mcp --check` to confirm). Bounded by AP_ALLOWED_ROOTS when set.
+
+    Returns {"ok": bool, "output_project": str | None, "error": str | None}."""
+    return _run_mesh_edit(project, "util_mesh_smooth();",
+                          output_project, in_place, timeout_s)
+
+
+mcp.tool()(smooth_mesh)
+
+
+def duplicate_mesh(project: str, output_project: str | None = None,
+                   in_place: bool = False, timeout_s: float = DEFAULT_TIMEOUT_S) -> dict:
+    """Duplicate the project's mesh object via ArmorPaint's own duplicate
+    function (util_mesh_duplicate -- exposed to --script by this project's
+    scoped local patch; see ROADMAP.md's "Patch policy"). Confirmed
+    empirically to be an exact 2x vertex/face-count operation, adding a
+    second object to the scene. Operates on a copy of `project` by default
+    -- pass in_place=True to mutate `project` itself instead, in which case
+    output_project must be omitted. Requires AP_BINARY to be a build
+    carrying the mesh-edit patch (run `ap-mcp --check` to confirm). Bounded
+    by AP_ALLOWED_ROOTS when set.
+
+    Returns {"ok": bool, "output_project": str | None, "error": str | None}."""
+    return _run_mesh_edit(project, "util_mesh_duplicate();",
+                          output_project, in_place, timeout_s)
+
+
+mcp.tool()(duplicate_mesh)
+
+
 def reexport_project(project: str, preset: str, output_dir: str) -> dict:
     """Re-export an existing .arm project's textures at a given preset,
     using ArmorPaint's native --export-textures flag (PNG). No resolution
