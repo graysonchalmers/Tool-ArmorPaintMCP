@@ -6,255 +6,221 @@ _Last updated: 2026-09-16 (wrap-up)_
 
 ## 🎯 Current state
 
-**v1's tool surface is complete AND its review debt is now closed.** All
-five planned tools (`reexport_project`, `create_procedural_material` +
-`list_available_presets`, `inspect_project`, `run_script`) are shipped,
-tested, and gated — see Phase 4's entry below for that history. This
-session additionally closed the 7 Minor findings parked at the end of
-Phase 3's and Phase 4's final reviews (a cleanup pass, not a new phase —
-`docs/PLAN.md` still has no Phase 5). Merged to `main` (`973a696`, real
-`--no-ff` merge commit) and pushed — `origin/main` confirmed in sync.
-Design spec: [docs/superpowers/specs/2026-09-15-armorpaint-mcp-design.md](docs/superpowers/specs/2026-09-15-armorpaint-mcp-design.md).
-Implementation plan: [docs/PLAN.md](docs/PLAN.md). This session's own plan:
-[docs/superpowers/plans/2026-09-16-minor-findings-cleanup.md](docs/superpowers/plans/2026-09-16-minor-findings-cleanup.md).
+**Major pivot session: mesh/UV editing is now a first-class part of this
+project, shipped as Phase 5, alongside v1's still-intact texture/material
+tools.** Grayson redirected priority from batch texture/material export
+toward automating mesh fixes (decimate/subdivide/bevel/smooth/duplicate/
+merge/UV-unwrap) and eventually non-destructive mesh replace. A same-session
+spike proved ArmorPaint 1.0's real GUI-only mesh-edit tools can be exposed to
+`--script` via a scoped one-line-per-function patch to `minic_api_list.h` —
+6 of 7 functions patched and empirically verified against real geometry in
+the spike, the 7th (`merge_geometry_down`, targeted 2-object merge) a
+confirmed dead end needing a new accessor. That became [ROADMAP.md](ROADMAP.md)
+(the project's new North Star doc) plus Amendment 3 in the design spec
+(revises, doesn't reverse, the original "no source patching" decision —
+narrowly scoped to register-an-already-working-function patches). A 7-task
+implementation plan
+([docs/superpowers/plans/2026-09-16-phase5-mesh-uv-editing.md](docs/superpowers/plans/2026-09-16-phase5-mesh-uv-editing.md))
+shipped all 7 tools (`decimate_mesh`, `bevel_mesh`, `subdivide_mesh`,
+`smooth_mesh`, `duplicate_mesh`, `merge_mesh_geometry`, `unwrap_mesh_uvs`)
+via subagent-driven-development — every task reviewed clean, a final
+whole-branch review (opus) found 4 cross-task Important findings, one fix
+wave closed all of them, a scoped re-review confirmed clean. **Merged to
+`main` (`b461ff7`, real `--no-ff` merge commit) and pushed** — `origin/main`
+confirmed in sync. v1's five original tools (`reexport_project`,
+`create_procedural_material` + `list_available_presets`, `inspect_project`,
+`run_script`) are unchanged, still shipped and gated (Phase 4's history
+below). Design spec:
+[docs/superpowers/specs/2026-09-15-armorpaint-mcp-design.md](docs/superpowers/specs/2026-09-15-armorpaint-mcp-design.md)
+(now with Amendment 3). Implementation plan: [docs/PLAN.md](docs/PLAN.md)
+(now with a Phase 5 section).
 
 ## 📌 Where we stopped
 
-The Minor-findings cleanup pass is done, merged, and pushed. Nothing is
-mid-flight. The project is at a clean, fully-verified stopping point —
-there is no unfinished task to resume.
+Phase 5 is done, merged, and pushed. Nothing is mid-flight — a clean,
+fully-verified stopping point. Full detail on both the pivot (brainstorm →
+spike → ROADMAP.md → plan) and the build (7-task SDD execution → final
+review → fix wave → merge) is in this session's log entry below; the short
+version: Grayson redirected priority to mesh/UV automation, a spike proved
+ArmorPaint's GUI-only mesh-edit tools patch cleanly into `--script`, and all
+7 tools shipped through this project's normal brainstorm→plan→SDD→review
+pipeline with nothing skipped.
 
-Executed as a 5-task plan
-(`docs/superpowers/plans/2026-09-16-minor-findings-cleanup.md`) in an
-isolated worktree (`worktree-minor-findings-cleanup`), each task committed
-and reviewed before the next:
-
-- **Task 1** (`d23fb6b`) — hardened `runner.run_api`'s stdout decode
-  (`errors="replace"`) against non-ASCII object/material names that could
-  otherwise raise `UnicodeDecodeError` and lose the whole `--api` result.
-- **Task 2** (`2e75990`) — `catalog.scene_objects` now raises `CatalogError`
-  when the "Scene objects in world space" marker is entirely absent from
-  `--api` output, consistent with its sibling parsers (`extract_project_state`,
-  `blend_modes`) — previously it silently returned `[]`, indistinguishable
-  from a genuinely empty scene. `inspect_project`'s call site moved inside
-  the existing `try/except CatalogError` block so the new exception can
-  never escape uncaught.
-- **Task 3** (`d4bc9b9`) — extracted two shared `server.py` helpers,
-  `_failure(error, *null_fields)` and `_is_arm_project_file(path)`, and
-  refactored all four tool functions to use them — pure refactor, no
-  behavior change (verified: identical test pass count, no error-text
-  changes).
-- **Task 4** (`7401711`) — added a real-binary integration test for
-  `run_script`'s timeout path (`timeout_s=0.01` against the real
-  `ArmorPaint.exe`, forcing a genuine `subprocess.TimeoutExpired`) — only a
-  mocked one existed before.
-- **Task 5** (`d0c4f71`) — `STATUS.md` closeout: a Deviations entry for
-  `run_script(project, script)` taking inline text instead of the
-  originally-spec'd `script_path`, and two Known Issues entries closing
-  findings confirmed **genuinely moot** via real `grep` verification (not
-  just asserted) — `inspect_project` was found to no longer call the
-  parsing `blend_modes()` at all (replaced by the hardcoded
-  `layer_blend_modes()` back in Phase 3), and the "timeout discards partial
-  output" concern is moot since stdout/stderr are already documented as
-  structurally empty on this Windows build.
-
-Final whole-branch review (opus, per this project's own established
-convention) said "Ready to merge: Yes" — found 1 Important finding (an
-unasserted `_failure()` null-field key-set invariant: nothing in the test
-suite actually checked the exact key set at 6 of 10 call sites, so a future
-typo like `_failure(msg, "file")` instead of `"files"` would silently ship)
-plus several Minor findings. One fix wave (`37c9a76`) closed the Important
-finding at 8 of 10 call sites plus 2 doc-accuracy Minors in `STATUS.md`. The
-scoped re-review confirmed no new breakage but found the fix incomplete: 2
-tests (`test_run_script_rejects_nonexistent_project_path` and
-`test_run_script_rejects_path_outside_allowed_roots`) still assert only
-`result["stdout"] is None`, missing the sibling `result["stderr"] is None`
-for the same `_failure(msg, "stdout", "stderr")` call site. Per this
-project's own subagent-driven-development convention, the final review gets
-exactly one fix wave — no second round was spent. Adjudicated and parked:
-the underlying code is already correct at both sites (verified
-independently twice), so this is a real but non-load-bearing test-coverage
-gap, not a live bug. Flagged below as a fine opportunistic pickup.
-
-Verified fresh on the actual merged `main` tree (not just the pre-merge
-branch): `.venv\Scripts\python.exe -m pytest -q` → **95 passed, 0 failed, 9
-deselected**; `-m integration` (real `AP_BINARY`) → **9 passed, 0 failed**;
-`pwsh smoke\smoke.ps1` → **6/6 passed, exit 0**.
-
----
-
-### Earlier: Phase 4 (`run_script` escape hatch + v1 polish)
-
-Phase 4 (`run_script` + docs/packaging polish) executed as a 5-task plan
-(`docs/superpowers/plans/2026-09-16-phase4-run-script.md`) in an isolated
-worktree (`worktree-worktree-phase4-run-script`), each task committed and
-reviewed before the next:
-
-- **Task 1** (`c09bff0`) — `runner.run_minic_script`: launches ArmorPaint
-  **with** `--background` this time (a confirmed departure from Phases 1-2's
-  no-`--background` pattern — see the plan's "Empirical findings"),
-  `subprocess.run([binary, project, "--background", "--script", path])`
-  against an already-open project. Empirically confirmed the process
-  self-exits cleanly in ~1-2s and runs the script correctly, so **no
-  poll-and-terminate dance is needed** here (unlike `--export-textures`,
-  where Amendment 1 found `--background` races ahead of a deferred export —
-  this is a different code path: `args_run_script`'s `minic_eval()` runs
-  synchronously before `iron_stop()` is scheduled). Also reconfirmed minic's
-  known silent-failure mode: a script calling an undefined function exits 0
-  with empty stdout/stderr, identical to success — `ok=True` proves only
-  that the ArmorPaint process completed, never that the script did what was
-  asked. Documented prominently in the docstring so callers don't
-  over-trust the return value.
-- **Task 2** (`e29614c`) — registered `run_script` as the server's fifth MCP
-  tool, mirroring `inspect_project`'s exact pattern: same
-  `AP_ALLOWED_ROOTS` sandboxing via `ensure_within_roots`, and the same
-  phantom-default-project guard (file-exists + `.arm`-extension check
-  before launching ArmorPaint, so a bogus path can't silently make
-  ArmorPaint open its own empty default project and report a false
-  `ok: True` — the Phase 3 Critical-finding pattern, applied proactively
-  here instead of needing a second review cycle to catch it).
-- **Task 3** (`8fbcdb4`) — `tests/test_run_script_integration.py`: two real
-  end-to-end tests against the actual local `ArmorPaint.exe`, filling a
-  layer and exporting textures via `--script` against the fixture project.
-  Both passed first run; full suites green with no regressions (87/87 unit,
-  6/6 integration at that point in the branch).
-- **Task 4** — Phase 4 plan doc itself, committed (`698080c`) before
-  implementation started, continuing Phase 1-3's precedent of the plan
-  living in git history, not just the worktree.
-- **Task 5 (this task)** — final verification sweep + `README.md` /
-  `pyproject.toml` polish (`8735118`): `Development Status` classifier
-  moved Pre-Alpha → Alpha, README's Status section now states all five v1
-  tools are shipped, and a short escape-hatch blurb for `run_script` was
-  added to the tools section.
-
-Verification run fresh on the fully-assembled branch (all counts real,
-this session):
-- `.venv\Scripts\python.exe -m pytest -q` → **87 passed, 0 failed, 6
-  deselected**
-- `.venv\Scripts\python.exe -m pytest -q -m integration` (with `AP_BINARY`
-  set to the real local `ArmorPaint.exe`) → **6 passed, 0 failed** (every
-  prior phase's integration test plus both new `run_script` tests, no
-  regressions)
-- `pwsh smoke\smoke.ps1` → **6/6 passed, exit 0**, including the new
-  `run_script registered as an MCP tool` probe
-- **Clean-clone install check** (this phase's own stated gate from
-  `docs/PLAN.md`): cloned the worktree's committed tree to a scratch temp
-  dir (not the `main`-tracking `C:\Projects-local\Tool-ArmorPaintMCP`
-  checkout, since Phase 4's commits weren't merged to `main` yet at that
-  point — cloning from there would have tested pre-Phase-4 code), fresh
-  `python -m venv`, `pip install -e .` succeeded cleanly (built the
-  editable wheel, all deps resolved), `ap-mcp --version` and `--help` both
-  exit 0. `ap-mcp --check` correctly reported `[FAIL] AP_BINARY: not set`
-  (exit 1) since the fresh clone has no `.env` — the honest, expected
-  result for a config-less clone, not a defect in the check itself.
-  Scratch dir removed after.
-
-Then the **final whole-branch review** (opus, the most capable model, per
-this project's established convention) found 1 Critical + 3 Important
-findings none of the five per-task reviews caught, since each was scoped to
-one task's diff:
-
-- **Critical:** `run_script` can call minic's `project_save(0)` and
-  silently overwrite the caller's `.arm` project in place — demonstrated
-  empirically (fixture file size/md5 changed after a
-  `script_fill_layer(); project_save(0);` script ran with `ok=True`, no
-  warning). The plan's Global Constraints section had affirmatively (and
-  wrongly) claimed `run_script` "never saves a project... no
-  in-place-mutation risk." **Ruling:** fix is documentation-only, not an
-  architecture change — no copy-by-default, no opt-in flag. The design
-  spec explicitly says this tool must not be gated behind an extra flag,
-  and a flag couldn't be enforced anyway since minic scripts can't be
-  statically analyzed for whether they'll call `project_save()` before
-  running them; forcing copy-by-default would also defeat the tool's
-  actual purpose (acting on the real project) for exactly the cases it
-  exists to serve.
-- **Important:** `stdout`/`stderr` are structurally always empty on this
-  Windows build — ArmorPaint's script-facing console functions
-  (`console_log` etc.) write via `WriteConsoleW` directly to the console
-  handle, which `subprocess.run(capture_output=True)`'s pipe redirection
-  cannot capture (verified empirically; different from `run_api`, which
-  uses plain `printf` and works fine).
-- **Important:** the docstring's "Bounded by AP_ALLOWED_ROOTS when set"
-  overclaimed — only the `project` path is bounded, not what the script
-  body itself does.
-- **Important:** no caller-facing `timeout_s` override existed, pinning an
-  inherently unbounded, caller-defined workload to the 30s default.
-
-One fix wave (`f764464`) closed all four, corrected the false claim
-everywhere it appeared (plan, `server.py` docstring, `STATUS.md`,
-double-checked `README.md` wasn't affirmatively claiming safety either),
-added the honest `WARNING`/`NOTE` docstring language, fixed the
-`AP_ALLOWED_ROOTS` sentence, and added `timeout_s: float = 30.0` as a real
-parameter (forwarded to `run_minic_script`, covered by a new unit test).
-Scoped re-review: all four ADDRESSED, no new breakage. 4 Minor findings
-parked (see "Open questions" below) — none load-bearing.
-
-Verification re-run fresh after the fix wave and again on the actual
-**merged `main` tree** (never trust a pre-merge green): unit **88 passed, 0
-failed, 6 deselected**; integration **6 passed, 0 failed**; smoke **6/6,
-exit 0**.
-
-**Merged and pushed.** `git merge --no-ff worktree-worktree-phase4-run-script`
-into `main` (a real merge commit, `0c61b94`), worktree and branch removed,
-pushed to `origin` on Grayson's explicit go-ahead — `origin/main` is
-confirmed `0  0` against local `HEAD`.
+Verified fresh on the actual merged `main` tree (twice — once right after
+merge, once more after adding a `.env` at the repo root since none existed
+there before): `.venv\Scripts\python.exe -m pytest -q` → **122 passed, 0
+failed, 18 deselected**; `-m integration` (real patched `AP_BINARY`) →
+**18 passed, 0 failed** (one flaky failure on the very first post-merge run,
+`smooth_mesh`'s vertex-count assertion — reran clean twice after; root-caused
+to ArmorPaint's own algorithm, not a merge regression — see project memory
+`armorpaint-smooth-mesh-flaky-vertex-count`, not yet run through
+`smoke\smoke.ps1` this exact session but was 13/13 as part of Phase 5's
+own Task 7 closeout).
 
 ## ▶️ Next concrete step
 
-**Both `docs/PLAN.md`'s 4 phases AND their follow-up review debt are now
-closed.** There is no Phase 5 and no more parked findings. The project is
-at a genuine stopping point — the natural next work is whatever Grayson
-picks up next, not something this codebase is waiting on:
+No open phase — `docs/PLAN.md`'s Phase 5 is the last one, and ROADMAP.md
+items 1-7 are all shipped. Real options for next session, none urgent:
 
-- **The one parked test-coverage gap** (see this session's log entry below)
-  — two tests missing a `result["stderr"] is None` assertion on an
-  already-correct `run_script` code path. Trivial, non-urgent; fine to fix
-  opportunistically next time `tests/test_server.py` is open for something
-  else, or as its own 5-minute task.
-- **Live mode** — deferred, not rejected, per the design spec's "Deferred:
-  live mode" section (two options already named there, neither chosen).
-  Revisit only once there's an actual concrete need for interactive
-  GUI-attached control, not before.
+- **Upstream the mesh-edit patch as a PR to `armory3d/armorpaint`** —
+  Grayson's stated ambition (his first open-source contribution). The patch
+  (branch `spike/minic-decimate` in `C:\Projects-local\z-Git\ArmorPaint`,
+  unpushed, one file, 7 functions, every line empirically proven) is a
+  strong candidate. Not yet done: read the project's actual contribution
+  guidelines, decide whether to mention the rejected `merge_geometry_down`
+  attempt in the same PR or a follow-up.
+- **ROADMAP.md items 8-10** — non-destructive mesh replace (needs its own
+  bisection + a real multi-object fixture), targeted 2-object merge (needs
+  a new minic accessor, bigger patch), UV validity check (reachability
+  unchecked). None scoped into a phase yet.
+- **Two small parked doc/docstring gaps** from the final review (see
+  "Open questions") — trivial whenever `server.py` or the design spec is
+  next open for something else.
 
 ## ❓ Open questions
 
 - Live mode (deferred, not rejected) — two options named in the spec, neither
   chosen; revisit only once batch mode is solid and live mode is actually
-  wanted.
-- The parked `_failure()` key-set assertion gap (2 of 10 call sites) — worth
-  its own tiny task, or picked up opportunistically? Not blocking anything.
+  wanted. (Carried over, unchanged this session.)
+- The parked `_failure()` key-set assertion gap (2 of 10 call sites, from the
+  Minor-findings cleanup session) — still open, unrelated to Phase 5. Worth
+  its own tiny task, or picked up opportunistically.
+- Design spec's own Amendment 3 prose still says "6 of 7 functions patched" —
+  ROADMAP.md's copy was corrected during Phase 5's final-review fix wave, the
+  spec's own historical text wasn't (out of that fix's scope). Cosmetic.
+- `merge_mesh_geometry`'s docstring has no general "ok=True proves only
+  completion" caveat (only its precondition-guard-specific one) — a real but
+  non-load-bearing gap, one sentence to fix whenever `server.py` is next open.
+- `smooth_mesh`'s flaky vertex count (94 vs 96, once) — needs more data
+  points before it's worth a real investigation; see project memory.
 
 ## 🗂️ Changed this session
 
-- Merged to `main` (`973a696`, real `--no-ff` merge commit) and pushed to
-  `origin` — confirmed in sync. Worktree/branch
-  (`worktree-minor-findings-cleanup`) removed after the merge.
-- Files this session: `src/armorpaint_mcp/runner.py` (`run_api` decode
-  hardening), `src/armorpaint_mcp/catalog.py` (`scene_objects` error
-  convention), `src/armorpaint_mcp/server.py` (`_failure`/
-  `_is_arm_project_file` shared helpers across all four tools),
-  `tests/test_runner.py`, `tests/test_catalog.py`, `tests/test_server.py`,
-  `tests/test_run_script_integration.py` (new real-timeout test),
-  `STATUS.md` (Deviations entry + 2 Known Issues closures),
-  `docs/superpowers/plans/2026-09-16-minor-findings-cleanup.md` (new),
-  `HANDOFF.md`. Also logged this session to
-  `_agent-commons\log\2026-09-16-claude-code-armorpaint-mcp-minor-findings-cleanup.md`
-  (Skills-Core repo, committed and pushed separately via `Push-Repo.ps1`
-  from inside `_agent-commons` — the shell's cwd resets between tool calls
-  in this harness, so `Set-Location` and the script invocation had to be
-  one single PowerShell call, not two).
-- Decisions (+ why): confirmed via `grep` — not just asserted — that
-  `inspect_project` no longer calls the parsing `blend_modes()` at all
-  before writing STATUS.md's "moot" closure for that finding; ruled the
-  final whole-branch review's one residual gap (2 tests missing a
-  `stderr` assertion after the fix wave) as non-load-bearing and parked it
-  rather than spending a second fix wave, since this project's
-  subagent-driven-development convention grants the final review exactly
-  one fix round.
+- **Pivot:** [ROADMAP.md](ROADMAP.md) (new — the project's North Star:
+  revised purpose, MeshTriage boundary, stack-ranked roadmap, patch policy,
+  known gaps), Amendment 3 in the design spec (revises, doesn't reverse,
+  "no source patching" — narrowly scoped to register-an-already-working-
+  function patches), `docs/superpowers/plans/2026-09-16-phase5-mesh-uv-editing.md`
+  (new, 7-task plan).
+- **Build (Phase 5, via subagent-driven-development in worktree
+  `worktree-phase5-mesh-uv-editing`):** `src/armorpaint_mcp/server.py` (7
+  new tools + shared `_run_mesh_edit` helper), `src/armorpaint_mcp/catalog.py`
+  (`mesh_edit_patch_missing`), `src/armorpaint_mcp/doctor.py` (new
+  `--check` preflight item), 9 new integration test files, `tests/test_server.py`
+  and `tests/test_catalog.py`/`tests/test_doctor.py` (new) extended,
+  `tests/_mesh_edit_test_helpers.py` (new shared OBJ-diffing helpers),
+  `smoke/smoke.ps1` (7 new probes), `STATUS.md`/`docs/PLAN.md`/`ROADMAP.md`/
+  `README.md`/`CLAUDE.md` doc closeout.
+- **Sibling repo:** `C:\Projects-local\z-Git\ArmorPaint` fast-forwarded
+  16 commits, then switched to branch `spike/minic-decimate` (local commit
+  `fbef46e7`, the mesh-edit patch — unpushed) — `paint\build\out\ArmorPaint.exe`
+  (this project's `AP_BINARY` target) rebuilt from that branch. **This is a
+  deliberate, flagged state change**, not an accident — `CLAUDE.md` now
+  documents it. The checkout is no longer plain stock `main`.
+- **Merged to `main` (`b461ff7`, real `--no-ff` merge commit) and pushed**
+  — `origin/main` confirmed in sync. Worktree/branch removed after merge.
+  `.env` created at both the worktree root (during the build) and the main
+  repo root (during wrap-up verification) — neither existed before this
+  session; past sessions must have set `AP_BINARY` as a raw process env var.
+- **Decisions (+ why):** full detail in this session's log entry below —
+  the MeshTriage-boundary call (triage vs. edit, not delegation), the
+  scoped-patch-policy revision (narrow, not a blanket reopening of
+  "no source patching"), and every ruling made during the SDD execution
+  (worktree base, `.env` setup, the two parked final-review residuals).
+- Memory: 4 new entries this session (`armorpaint-minic-mesh-edit-patching`,
+  `armorpaint-bash-tool-silently-no-ops`, `armorpaint-smooth-mesh-flaky-vertex-count`,
+  plus an update to the mesh-edit-patching entry with the full 7-function
+  batch results).
+- Commons log:
+  `_agent-commons\log\2026-09-16-claude-code-armorpaint-mcp-meshuv-pivot.md`
+  (written mid-session, before the Phase 5 build — covers the pivot/spike
+  half only, not the full implementation; a future session reading it
+  should also read this HANDOFF for the build half).
 
 ---
 
 ## 🕓 Session log
+
+### 2026-09-16 — Phase 5: mesh/UV editing pivot, patch spike, 7-task build, merge + push
+- Picked up with v1 + Minor-findings cleanup already shipped/merged/pushed.
+  Grayson opened the session redirecting the project's priority: he's
+  probably not using v1 as originally intended, and actually wants to
+  automate mesh/UV fixes (fixing UVs, remeshing/decimating, non-destructive
+  mesh updates) with materials/blockouts as a secondary want. Asked for a
+  gap analysis, a stack-ranked roadmap, and a North Star doc.
+- Surfaced (not silently assumed) that `Tool-MeshTriage` already does
+  non-destructive poly reduction + UV auto-unwrap on Blender, but as an
+  assessment/triage tool, not a live-project editor. Grayson clarified: he
+  wants to actually EDIT inside ArmorPaint once a problem's identified, not
+  delegate to MeshTriage — the two are complementary, not competing.
+- Two background-agent spikes (real ArmorPaint checkout, PowerShell only —
+  the Bash tool silently no-ops `ArmorPaint.exe` on this machine, cost ~8
+  tool calls to diagnose once, saved to memory) confirmed: UV unwrap and
+  remesh/decimate/etc. are GUI-button-only, not minic-registered — but
+  ArmorPaint 1.0 genuinely shipped real mesh-editing tools that don't exist
+  in older versions Grayson may have been thinking of.
+- Grayson asked about ArmorPaint 1.0's forum release notes; investigating
+  corrected an earlier false negative (my own and an agent's initial
+  `decimat` grep both missed `util_mesh_decimate` — re-ran and found it).
+  Fast-forwarded the ArmorPaint checkout 16 commits to current.
+- Grayson approved a scoped local source patch (revising, not reversing,
+  the project's "no source patching" decision) plus an eventual upstream
+  PR to `armory3d/armorpaint` — his first open-source contribution.
+  Classified as `superpowers:brainstorming`'s architectural path.
+- Spiked the patch mechanism on `util_mesh_decimate` first (cheapest to
+  verify: exact triangle-count diff): one-line `minic_api_list.h`
+  registration, 16.4s incremental rebuild, genuinely mutated the mesh
+  (96/188 → 56/108 → 20/36 vert/face across strength 0.1/0.5/0.9). Then
+  batched the remaining 6: `smooth`/`bevel`/`subdivide`/`merge_geometry`/
+  `duplicate`/UV-unwrap — all 6 patched and empirically verified (UV-unwrap
+  turned out to be a real built-in algorithm, `proc_uv_unwrap`, not
+  plugin-dependent despite its C function's misleading name); only
+  `merge_geometry_down` (targeted 2-object merge) was a genuine dead end.
+- Wrote [ROADMAP.md](ROADMAP.md) (North Star: revised purpose, MeshTriage
+  boundary, 15-item stack-ranked roadmap, patch policy, known gaps) and
+  Amendment 3 in the design spec, both reviewed and approved by Grayson
+  before proceeding.
+- Wrote a 7-task implementation plan
+  (`docs/superpowers/plans/2026-09-16-phase5-mesh-uv-editing.md`) and
+  executed it via `superpowers:subagent-driven-development` in worktree
+  `worktree-phase5-mesh-uv-editing`: Task 1 rebuilt the real `AP_BINARY`
+  target from the patch branch + added a `--check` preflight
+  (`mesh_edit_patch_missing` in `catalog.py`, wired into `doctor.py`) so a
+  stock binary fails loud instead of silently no-opping; Task 2 built the
+  shared `_run_mesh_edit` helper (copy-by-default, `in_place` opt-out) +
+  `decimate_mesh`; Tasks 3-4 added `bevel_mesh`/`subdivide_mesh` and
+  `smooth_mesh`/`duplicate_mesh`; Task 5 added `merge_mesh_geometry` with a
+  precondition guard (ArmorPaint silently no-ops merging <2 objects — this
+  surfaces as a clear failure instead); Task 6 added `unwrap_mesh_uvs`;
+  Task 7 closed out docs with a real fresh verification sweep. Every task
+  reviewed clean (0 Critical/Important across all 7).
+- **Controller error, self-caught:** the Task 1 dispatch omitted the
+  patch-branch-already-committed premise's actual state (it was uncommitted
+  working-tree state, not a real commit) — the implementer discovered and
+  fixed it themselves, flagged clearly, no harm done. **Second controller
+  error:** the final-review fix-wave dispatch omitted a "commit your work"
+  instruction — implementer correctly did what was asked (no commit),
+  caught by re-reading its report, resumed the same agent to commit rather
+  than losing the fix or re-deriving context in a fresh dispatch.
+- Final whole-branch review (opus) found 0 Critical, 4 cross-task Important
+  findings invisible to any single task's review: `_run_mesh_edit` raised
+  an uncaught `OSError` instead of the standard failure shape when
+  `output_project` resolved to the same file as `project`; a stale
+  *unedited* copy was left on disk when the minic script failed; the
+  `ok=True`-proves-only-completion caveat was missing from 4 of 7
+  docstrings; `CLAUDE.md`/`README.md` misstated the patched-binary
+  situation (claimed stock `main`, didn't mention the unpushed patch
+  dependency). One fix wave closed all four plus a 3-item doc-accuracy
+  sweep; a scoped re-review confirmed every finding addressed, no new
+  breakage, 2 non-load-bearing residuals parked with rulings (spec's own
+  stale "6 of 7" count, `merge_mesh_geometry`'s missing general caveat).
+- Merged to `main` (`b461ff7`, real `--no-ff` merge commit), re-verified on
+  the actual merged tree (hit one flaky `smooth_mesh` integration-test
+  failure on the first post-merge run, reran clean twice, root-caused to
+  ArmorPaint's own algorithm rather than the merge — saved to memory),
+  worktree and branch removed, pushed to `origin` on Grayson's explicit
+  go-ahead (standing approval from earlier in the session, per this
+  project's own wrap-up convention).
 
 ### 2026-09-16 — Minor-findings cleanup pass (5 tasks, closes Phase 3+4 review debt)
 - Picked up with v1's tool surface already shipped/merged/pushed from the
