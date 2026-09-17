@@ -33,6 +33,7 @@ explicitly deferred, not rejected — see the spec's "Deferred: live mode".
 | Unit tests | `pytest -q` (integration deselected by default via `addopts`) |
 | Integration test | `pytest -q -m integration` (real ArmorPaint, needs `AP_BINARY`) |
 | Build stamp | `python scripts/build_stamp.py` |
+| Mesh/UV gallery | `python scripts\generate_mesh_gallery.py` |
 
 ## Environment (this machine)
 

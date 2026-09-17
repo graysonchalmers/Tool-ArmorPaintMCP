@@ -69,6 +69,50 @@ and today's `create_procedural_material` can only wire a single node
 straight to the output, not compose a real graph. That's the current
 ceiling, tracked as open scope, not a platform limit.
 
+Real before/after output from Phase 5's 7 mesh/UV editing tools, each
+verified numerically in `tests/` (vertex/face-count diffs against an
+independent OBJ export) and, here, shown visually for the first time.
+Wireframe-over-solid renders via Blender headless, not ArmorPaint itself —
+ArmorPaint has no capability to render a picture of a mesh, headless or
+GUI, in this build (see
+[docs/superpowers/specs/2026-09-17-mesh-uv-visual-gallery-design.md](docs/superpowers/specs/2026-09-17-mesh-uv-visual-gallery-design.md)).
+[scripts/generate_mesh_gallery.py](scripts/generate_mesh_gallery.py)
+regenerates all 14 images through the real shipped tools.
+
+| `decimate_mesh` — before | `decimate_mesh` — after |
+|:--:|:--:|
+| ![decimate_mesh before](docs/images/gallery/mesh_edit/decimate_mesh_before.png) | ![decimate_mesh after](docs/images/gallery/mesh_edit/decimate_mesh_after.png) |
+
+*`decimate_mesh` genuinely reduces vertex/face count (verified in `tests/test_decimate_mesh_integration.py`), but that reduction isn't visually obvious in this wireframe render — investigating why is folded into the same follow-up as `smooth_mesh`'s flakiness (see [STATUS.md](STATUS.md) Known Issue #4).*
+
+| `bevel_mesh` — before | `bevel_mesh` — after |
+|:--:|:--:|
+| ![bevel_mesh before](docs/images/gallery/mesh_edit/bevel_mesh_before.png) | ![bevel_mesh after](docs/images/gallery/mesh_edit/bevel_mesh_after.png) |
+
+| `subdivide_mesh` — before | `subdivide_mesh` — after |
+|:--:|:--:|
+| ![subdivide_mesh before](docs/images/gallery/mesh_edit/subdivide_mesh_before.png) | ![subdivide_mesh after](docs/images/gallery/mesh_edit/subdivide_mesh_after.png) |
+
+| `smooth_mesh` — before | `smooth_mesh` — after |
+|:--:|:--:|
+| ![smooth_mesh before](docs/images/gallery/mesh_edit/smooth_mesh_before.png) | ![smooth_mesh after](docs/images/gallery/mesh_edit/smooth_mesh_after.png) |
+
+*`smooth_mesh` genuinely preserves position here (normals change, not the wireframe) — but be aware this tool is flaky: repeated calls against the identical fixture returned varying vertex counts and, on several runs, degenerate near-zero vertex positions, not just the "changed normals" its own docstring claims. This pair is a verified-clean sample, not proof the tool is reliable — see [STATUS.md](STATUS.md) Known Issue #4.*
+
+| `duplicate_mesh` — before | `duplicate_mesh` — after |
+|:--:|:--:|
+| ![duplicate_mesh before](docs/images/gallery/mesh_edit/duplicate_mesh_before.png) | ![duplicate_mesh after](docs/images/gallery/mesh_edit/duplicate_mesh_after.png) |
+
+| `merge_mesh_geometry` — before | `merge_mesh_geometry` — after |
+|:--:|:--:|
+| ![merge_mesh_geometry before](docs/images/gallery/mesh_edit/merge_mesh_geometry_before.png) | ![merge_mesh_geometry after](docs/images/gallery/mesh_edit/merge_mesh_geometry_after.png) |
+
+| `unwrap_mesh_uvs` — before | `unwrap_mesh_uvs` — after |
+|:--:|:--:|
+| ![unwrap_mesh_uvs before](docs/images/gallery/mesh_edit/unwrap_mesh_uvs_before.png) | ![unwrap_mesh_uvs after](docs/images/gallery/mesh_edit/unwrap_mesh_uvs_after.png) |
+
+*`unwrap_mesh_uvs` only rewrites UV texture coordinates — vertex positions and topology never change, so this pair is intentionally identical in a 3D wireframe render. Verified instead by real UV-coordinate diffs in [`tests/test_unwrap_mesh_uvs_integration.py`](tests/test_unwrap_mesh_uvs_integration.py).*
+
 ## How it works
 
 ArmorPaint ships real CLI automation:
