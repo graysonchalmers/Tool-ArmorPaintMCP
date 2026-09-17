@@ -95,8 +95,8 @@ one-line rationale — this is the thing to tune if a render looks wrong:
 
 | Setting | Value | Why |
 |---|---|---|
-| Shading mode | Solid + wireframe overlay (`shading.type='SOLID'`, `overlay.show_wireframe=True`) | Pure Wireframe shading hides face changes (bevel/subdivide read as line density only); solid+overlay shows both topology and silhouette. |
-| Camera | Orthographic, fixed angle, auto-framed to the mesh's bounding box | Consistent viewing angle across all 7 pairs makes before/after visually comparable; orthographic avoids perspective distortion misleading a viewer about size change. |
+| Wireframe technique | Freestyle edge rendering (`scene.render.use_freestyle=True` + `view_layer.use_freestyle=True`) over solid EEVEE/Cycles shading | Verified empirically (headless spike, see below) that the 3D viewport's "wireframe overlay" (`space.shading`/`space.overlay`) is a viewport-only visual — `bpy.ops.render.render()` never sees it, and `--background` mode has no viewport/window context to capture one from anyway (`bpy.context.screen` is `None`). Freestyle draws real edge lines into the actual rendered image and works fully headless. |
+| Camera | Orthographic, fixed diagonal direction, auto-framed via manual bounding-box math (not `view3d.camera_to_view_selected`, which needs a live 3D viewport area unavailable in `--background` mode) | Consistent viewing angle across all 7 pairs makes before/after visually comparable; orthographic avoids perspective distortion misleading a viewer about size change. Verified empirically against an off-origin, non-cubic test mesh — centers and scales correctly regardless of the source mesh's position/size. |
 | Lighting | Flat/minimal (single sun, no dramatic shadows) | This is a topology diagram, not a material/lighting showcase — shadows would compete with the wireframe for attention. |
 | Resolution | 800x600, transparent background | Matches the existing gallery images' rough scale; transparent background composites cleanly into the README table. |
 
@@ -142,9 +142,25 @@ one-line rationale — this is the thing to tune if a render looks wrong:
 
 ## Open items for implementation planning
 
-- Exact Blender Python API calls for bounding-box-based camera auto-framing
-  (`bpy.ops.view3d.camera_to_view_selected` or manual bbox math) — a
-  planning-time/task-time detail, not an architectural fork.
-- Whether `BLENDER_BINARY` needs Windows-path quoting handling identical to
-  `AP_BINARY`'s (likely yes, same `subprocess.run([binary, ...])` list-arg
-  pattern avoids the issue entirely — confirm during implementation).
+Both resolved during planning via a headless spike against Blender 5.1
+(`blender --background --python`, `bpy.ops.wm.obj_import`, confirmed
+present and correct on this machine's installed Blender versions
+4.4/4.5/5.0/5.1):
+
+- Camera auto-framing: manual bounding-box math (mesh's `bound_box` in
+  world space → center + radius → ortho camera positioned along a fixed
+  diagonal direction, `ortho_scale` derived from radius), not a viewport
+  operator. Verified against an off-origin, non-cubic test mesh.
+- Wireframe rendering: Freestyle (see Settings table above), not viewport
+  overlay — this was the one real correction the spike forced; the
+  original viewport-overlay assumption would have silently produced plain
+  shaded renders with no wireframe at all.
+- `subprocess.run([binder_path, ...])`'s list-arg form (matching
+  `AP_BINARY`'s existing pattern) avoids Windows path-quoting issues for
+  `BLENDER_BINARY` the same way — confirmed no special handling needed
+  beyond what `runner.py` already does for `AP_BINARY`.
+- One Windows-specific gotcha worth documenting in the render script's own
+  comments: `scene.render.filepath` must be a native path
+  (`C:/Users/...`, forward slashes are fine, but not a POSIX-style
+  `/c/Users/...` shell path) — Blender does not translate the latter and
+  will write to a nonsense location (`C:\c\Users\...`) without erroring.
