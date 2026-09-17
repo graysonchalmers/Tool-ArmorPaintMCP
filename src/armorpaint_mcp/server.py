@@ -136,6 +136,51 @@ def decimate_mesh(project: str, strength: float, output_project: str | None = No
 mcp.tool()(decimate_mesh)
 
 
+def bevel_mesh(project: str, amount: float, output_project: str | None = None,
+               in_place: bool = False, timeout_s: float = DEFAULT_TIMEOUT_S) -> dict:
+    """Bevel the project's mesh edges via ArmorPaint's own bevel algorithm
+    (util_mesh_bevel -- exposed to --script by this project's scoped local
+    patch; see ROADMAP.md's "Patch policy"). `amount` is the bevel distance
+    (ArmorPaint's own GUI default is 0.1). Operates on a copy of `project`
+    by default -- pass in_place=True to mutate `project` itself instead, in
+    which case output_project must be omitted. Requires AP_BINARY to be a
+    build carrying the mesh-edit patch (run `ap-mcp --check` to confirm).
+    Bounded by AP_ALLOWED_ROOTS when set.
+
+    ok=True proves the ArmorPaint process completed and saved -- not that
+    the bevel looks good.
+
+    Returns {"ok": bool, "output_project": str | None, "error": str | None}."""
+    try:
+        amount = _finite_float("amount", amount)
+    except NodeSpecError as exc:
+        return _failure(str(exc), "output_project")
+    return _run_mesh_edit(project, f"util_mesh_bevel({amount});",
+                          output_project, in_place, timeout_s)
+
+
+mcp.tool()(bevel_mesh)
+
+
+def subdivide_mesh(project: str, output_project: str | None = None,
+                   in_place: bool = False, timeout_s: float = DEFAULT_TIMEOUT_S) -> dict:
+    """Subdivide the project's mesh via ArmorPaint's own subdivide algorithm
+    (util_mesh_subdivide -- exposed to --script by this project's scoped
+    local patch; see ROADMAP.md's "Patch policy"). Confirmed empirically to
+    be an exact 4x face-count operation on this build. Operates on a copy of
+    `project` by default -- pass in_place=True to mutate `project` itself
+    instead, in which case output_project must be omitted. Requires
+    AP_BINARY to be a build carrying the mesh-edit patch (run `ap-mcp
+    --check` to confirm). Bounded by AP_ALLOWED_ROOTS when set.
+
+    Returns {"ok": bool, "output_project": str | None, "error": str | None}."""
+    return _run_mesh_edit(project, "util_mesh_subdivide();",
+                          output_project, in_place, timeout_s)
+
+
+mcp.tool()(subdivide_mesh)
+
+
 def reexport_project(project: str, preset: str, output_dir: str) -> dict:
     """Re-export an existing .arm project's textures at a given preset,
     using ArmorPaint's native --export-textures flag (PNG). No resolution

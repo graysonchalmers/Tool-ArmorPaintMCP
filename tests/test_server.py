@@ -8,7 +8,7 @@ from armorpaint_mcp.catalog import CatalogError
 from armorpaint_mcp.runner import DEFAULT_TIMEOUT_S, ExportResult, ApiResult, ScriptResult
 from armorpaint_mcp.server import (mcp, reexport_project, create_procedural_material,
                                    list_available_presets, inspect_project, run_script,
-                                   decimate_mesh)
+                                   decimate_mesh, bevel_mesh, subdivide_mesh)
 
 
 @pytest.fixture(autouse=True)
@@ -594,3 +594,52 @@ def test_decimate_mesh_is_registered_as_an_mcp_tool():
     assert set(tool.input_schema["properties"]) == {
         "project", "strength", "output_project", "in_place", "timeout_s"}
     assert set(tool.input_schema.get("required", [])) == {"project", "strength"}
+
+
+def test_bevel_mesh_calls_the_right_minic_function(tmp_path):
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
+    output_project = tmp_path / "out.arm"
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
+        mock_cfg.return_value.binary = "ArmorPaint.exe"
+        mock_cfg.return_value.allowed_roots = []
+        mock_run.return_value = ScriptResult(ok=True, stdout="", stderr="")
+
+        result = bevel_mesh(project=str(project), amount=0.1,
+                            output_project=str(output_project))
+
+    assert result["ok"] is True
+    assert "util_mesh_bevel(0.1);" in mock_run.call_args[0][2]
+
+
+def test_subdivide_mesh_calls_the_right_minic_function(tmp_path):
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
+    output_project = tmp_path / "out.arm"
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
+        mock_cfg.return_value.binary = "ArmorPaint.exe"
+        mock_cfg.return_value.allowed_roots = []
+        mock_run.return_value = ScriptResult(ok=True, stdout="", stderr="")
+
+        result = subdivide_mesh(project=str(project), output_project=str(output_project))
+
+    assert result["ok"] is True
+    assert "util_mesh_subdivide();" in mock_run.call_args[0][2]
+
+
+def test_bevel_mesh_is_registered_as_an_mcp_tool():
+    tools = asyncio.run(mcp.list_tools())
+    by_name = {t.name: t for t in tools}
+    assert "bevel_mesh" in by_name, sorted(by_name)
+    assert set(by_name["bevel_mesh"].input_schema.get("required", [])) == {"project", "amount"}
+
+
+def test_subdivide_mesh_is_registered_as_an_mcp_tool():
+    tools = asyncio.run(mcp.list_tools())
+    by_name = {t.name: t for t in tools}
+    assert "subdivide_mesh" in by_name, sorted(by_name)
+    assert set(by_name["subdivide_mesh"].input_schema.get("required", [])) == {"project"}
