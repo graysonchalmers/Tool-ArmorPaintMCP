@@ -120,7 +120,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         pairs = {
             "decimate_mesh": _simple_tool(
-                tmp, "decimate_mesh", lambda **kw: decimate_mesh(strength=0.5, **kw)),
+                tmp, "decimate_mesh", lambda **kw: decimate_mesh(strength=0.85, **kw)),
             "bevel_mesh": _simple_tool(
                 tmp, "bevel_mesh", lambda **kw: bevel_mesh(amount=0.1, **kw)),
             "subdivide_mesh": _simple_tool(tmp, "subdivide_mesh", subdivide_mesh),
