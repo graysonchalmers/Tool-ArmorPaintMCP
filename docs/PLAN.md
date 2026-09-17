@@ -127,6 +127,61 @@ README accuracy pass.
 **Gate:** a clean-clone install + `ap-mcp --check` + smoke test all pass with
 no undocumented manual steps.
 
+## Phase 5 — Mesh/UV editing tools
+
+7 new tools (`decimate_mesh`, `bevel_mesh`, `subdivide_mesh`, `smooth_mesh`,
+`duplicate_mesh`, `merge_mesh_geometry`, `unwrap_mesh_uvs`), all wired to
+ArmorPaint's own real, working mesh-edit algorithms via a small, scoped
+local patch to `paint\sources\minic_api_list.h` in the ArmorPaint checkout.
+Why a patch is the accepted path here — and why this doesn't reopen
+source-patching for anything else (rebake/texture-swap remain exactly as
+out-of-scope as Phase 2 found them) — is covered in
+[ROADMAP.md's "Patch policy"](../ROADMAP.md#patch-policy) and
+[the design spec's Amendment 3](superpowers/specs/2026-09-15-armorpaint-mcp-design.md#amendment-3-scoped-patch-policy-for-meshuv-2026-09-16);
+not re-explained here.
+
+**Scope:** every tool shares one helper, `_run_mesh_edit`, which resolves the
+edit target (a copy at `output_project` by default -- never the caller's own
+file unless `in_place=True`), runs the tool-specific minic call followed by
+`project_save(0)` in a single `--script` process, and reports the outcome.
+`merge_mesh_geometry` additionally checks the project's object count via
+`inspect_project`'s own `--api` machinery before running, since
+`util_mesh_merge_geometry` silently no-ops (by its own internal guard) on a
+project with fewer than 2 objects -- confirmed empirically during this
+phase's spike, and worth a clear error instead of a false `ok=True` with no
+visible effect.
+
+**Empirical findings worth recording:**
+- `subdivide_mesh` is an exact 4x face-count operation on this build;
+  `duplicate_mesh` is an exact 2x vertex/face-count operation. Both confirmed
+  via real OBJ export diffs, not just "changed."
+- `smooth_mesh` preserves vertex/face count exactly (topology unchanged) but
+  does change vertex normals -- the reverse assertion direction from every
+  other tool in this phase, and the one real correctness risk task review
+  flagged and confirmed.
+- `merge_mesh_geometry` merges ALL objects in the project, not a targeted
+  pair -- ArmorPaint's GUI "merge with the object below"
+  (`util_mesh_merge_geometry_down`) needs a second minic accessor for "the
+  other object" that doesn't exist yet (ROADMAP.md item 9, out of scope for
+  this phase).
+- `unwrap_mesh_uvs`'s underlying call (`plugin_uv_unwrap_button`) is real,
+  built-in ArmorPaint code calling `proc_uv_unwrap()` directly -- not a
+  loaded plugin despite the C function's name. Confirmed to genuinely change
+  UV coordinates (all 144 `vt` lines differed on the fixture); unwrap
+  quality/atlas-efficiency vs. `xatlas` (Tool-MeshTriage's unwrapper) has not
+  been compared -- see ROADMAP.md's "Known gaps."
+- No multi-object test fixture exists yet, so `merge_mesh_geometry`'s
+  2-object integration test builds its own starting point by calling
+  `duplicate_mesh` first, rather than a dedicated fixture file.
+
+**Gate:** `smoke/smoke.ps1`: 13/13 passed, exit 0 (6 prior probes + 1 new
+registration probe per tool). `.venv\Scripts\python.exe -m pytest -q`: 118
+passed, 0 failed, 18 deselected. `-m integration`: 18 passed, 0 failed. All 7
+tools verified against real geometry via independent `script_export_mesh`
+OBJ diffs (never just `ok=True`) -- see STATUS.md's Phase 5 gate row and
+"Current Phase Detail (Phase 5)" table for the specific before/after
+relationship each tool's integration test proved.
+
 ## Deferred (not scoped into any phase above)
 
 - **Live mode** — interactive, GUI-attached control. See the design spec's

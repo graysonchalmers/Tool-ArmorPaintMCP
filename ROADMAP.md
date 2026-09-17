@@ -54,13 +54,13 @@ MeshTriage, and MeshTriage's scope is unaffected by this pivot.
 
 | # | Item | Status |
 |---|---|---|
-| 1 | `unwrap_mesh_uvs` | 🔬 proven (`plugin_uv_unwrap_button` → real `proc_uv_unwrap`, not plugin-dependent) — not yet an MCP tool |
-| 2 | `decimate_mesh` | 🔬 proven (`util_mesh_decimate`, real triangle-count reduction) — not yet an MCP tool |
-| 3 | `subdivide_mesh` | 🔬 proven (`util_mesh_subdivide`, exact 4× face count) — not yet an MCP tool |
-| 4 | `bevel_mesh` | 🔬 proven (`util_mesh_bevel`) — not yet an MCP tool |
-| 5 | `smooth_mesh` | 🔬 proven (`util_mesh_smooth`, normals verified changed) — not yet an MCP tool |
-| 6 | `duplicate_mesh` | 🔬 proven (`util_mesh_duplicate`, exact 2× vert/face count) — not yet an MCP tool |
-| 7 | `merge_mesh_geometry` | 🔬 proven (`util_mesh_merge_geometry`, via duplicate→merge chain) — not yet an MCP tool |
+| 1 | `unwrap_mesh_uvs` | ✅ shipped (Phase 5) |
+| 2 | `decimate_mesh` | ✅ shipped (Phase 5) |
+| 3 | `subdivide_mesh` | ✅ shipped (Phase 5) |
+| 4 | `bevel_mesh` | ✅ shipped (Phase 5) |
+| 5 | `smooth_mesh` | ✅ shipped (Phase 5) |
+| 6 | `duplicate_mesh` | ✅ shipped (Phase 5) |
+| 7 | `merge_mesh_geometry` | ✅ shipped (Phase 5) |
 | 8 | Non-destructive mesh replace/swap | ⬜ inconclusive — two real code paths identified (`script_import_asset` destructive, `script_append_mesh` additive), neither empirically confirmed; needs its own bisection + a real multi-object test fixture |
 | 9 | Targeted 2-object merge (`merge_geometry_down`'s real use case) | ⬜ blocked — needs a new minic accessor for "the other object," bigger patch than a one-liner |
 | 10 | UV validity check (1.0 changelog item) | ⬜ unchecked — minic reachability not yet investigated |
@@ -70,9 +70,10 @@ MeshTriage, and MeshTriage's scope is unaffected by this pivot.
 | 14 | `run_script` | ✅ shipped (v1, Phase 4) — escape hatch, stays useful regardless of new tools |
 | 15 | `list_available_presets` | ✅ shipped (v1, Phase 1/2) |
 
-Items 1-7 are the next implementation phase's natural scope — every one of them is
-already empirically de-risked, unlike the rest of v1's phases, which each needed
-their own hands-on investigation before implementation could start.
+Items 1-7 shipped as Phase 5 (2026-09-16, see docs/PLAN.md and STATUS.md) — every
+one of them was already empirically de-risked going in, unlike the rest of v1's
+phases, which each needed their own hands-on investigation before implementation
+could start. Items 8-10 remain open and are not scoped into any phase yet.
 
 ## Patch policy
 

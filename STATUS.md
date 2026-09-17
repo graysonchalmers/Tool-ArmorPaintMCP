@@ -4,7 +4,10 @@
 > States: ✅ verified (gate evidence exists) · 🔌 wired (code exists, no gate yet) · ⬜ not started.
 
 **Last updated:** 2026-09-16
-**Open phase:** none -- Phase 4 was the last phase in `docs/PLAN.md`
+**Open phase:** none -- Phase 5 was the last phase in `docs/PLAN.md` (ROADMAP.md
+items 8-10 -- non-destructive mesh replace, targeted 2-object merge, UV
+validity check -- remain open on the roadmap but were never scoped into a
+`docs/PLAN.md` phase; not implied done by this line)
 
 ---
 
@@ -18,6 +21,7 @@
 | 3 | `inspect_project` + dynamic catalog (blend modes; bake types deliberately out of scope -- see Deviations) | ✅ 2026-09-16 | `smoke/smoke.ps1`: 5/5 passed, exit 0 (`inspect_project registered as an MCP tool` probe passing); `.venv\Scripts\python.exe -m pytest -q`: 76 passed, 0 failed, 4 deselected (72 from the initial gate sweep + 4 added by the final-review fix wave: `layer_blend_modes()` regression test, two bogus-path rejection tests, and the mocked blend-index-12 regression test); `-m integration`: 4 passed, 0 failed (`test_reexport_project_produces_real_files` [Phase 1], `test_checker_material_produces_a_genuinely_painted_texture` [Phase 2], `test_inspect_project_reports_real_object_from_the_fixture` [tightened to assert real fixture content, not just types] + `test_inspect_project_reports_all_materials_in_a_multi_material_project` [Phase 3], no regressions). Final whole-branch review (opus) found and a fix wave closed 2 Critical findings (layer blend-mode enum mismatch mislabeling 6/18 modes; a bogus project path returning a false `ok: True`) plus 2 Important test-coverage gaps -- see docs/superpowers/plans/2026-09-16-phase3-inspect-project.md's SDD ledger for the full writeup. |
 | 4 | `run_script` escape hatch + docs/packaging polish | ✅ 2026-09-16 | `smoke/smoke.ps1`: 6/6 passed, exit 0 (`run_script registered as an MCP tool` probe passing); `.venv\Scripts\python.exe -m pytest -q`: 88 passed, 0 failed, 6 deselected (87 from the initial gate sweep + 1 added by the final-review fix wave: `test_run_script_passes_custom_timeout_s_through`); `-m integration`: 6 passed, 0 failed (all prior phases' integration tests plus the two new run_script tests, no regressions); clean-clone check (`git clone` to a scratch dir, `pip install -e .`, `ap-mcp --version`/`--help`/`--check`) all exit as expected with no undocumented manual steps -- `--version`/`--help` exit 0, `--check` correctly reports `[FAIL] AP_BINARY: not set` (exit 1) since a fresh clone has no `.env`, which is the honest expected result, not a defect. Final whole-branch review (opus) found and a fix wave closed 1 Critical finding (`run_script`'s docs falsely claimed it can never save/mutate the project, when minic's `project_save()` is reachable and demonstrated to overwrite it in place) plus 3 Important findings (stdout/stderr structurally empty on Windows -- `WriteConsoleW`, not pipe-capturable; `AP_ALLOWED_ROOTS` docstring overclaim -- only `project` is bounded, not the script body; no caller-facing `timeout_s` override) -- see docs/superpowers/plans/2026-09-16-phase4-run-script.md's SDD ledger (since deleted per convention; summarized in HANDOFF.md) for the full writeup. |
 | Cleanup | Minor-findings cleanup pass (post-Phase-4, 5 tasks: `_failure`/`_is_arm_project_file` shared helpers, `scene_objects` `CatalogError` on a missing section marker, `run_api` stdout decode hardened against non-ASCII names, a real-binary integration test for `run_script`'s timeout path, docs sweep) | ✅ 2026-09-16 | Final whole-branch review's fresh verification sweep: `.venv\Scripts\python.exe -m pytest -q`: 95 passed, 0 failed, 9 deselected; `-m integration`: 9 passed, 0 failed; `smoke/smoke.ps1`: 6/6 passed, exit 0. |
+| 5 | 7 mesh/UV editing tools (decimate/bevel/subdivide/smooth/duplicate/merge/unwrap_mesh_uvs), via a scoped local minic patch (see ROADMAP.md) | ✅ 2026-09-16 | `smoke/smoke.ps1`: 13/13 passed, exit 0. `pytest -q`: 118 passed, 0 failed, 18 deselected. `-m integration`: 18 passed, 0 failed. All 7 tools verified against real geometry via independent script_export_mesh OBJ diffs (not just ok=True) -- see this row's phase detail table below. |
 
 ---
 
@@ -73,6 +77,23 @@
 |---|---|---|
 | `src/armorpaint_mcp/runner.py` (`run_minic_script`) | ✅ | subprocess.run with --background + --script against an already-open project; confirmed empirically to self-exit cleanly and run correctly, no poll-and-terminate needed (see docs/superpowers/plans/2026-09-16-phase4-run-script.md's "Empirical findings") |
 | `src/armorpaint_mcp/server.py` (`run_script`) | ✅ | registered as an MCP tool (smoke probe passing); AP_ALLOWED_ROOTS sandboxing and phantom-default-project guard cover the `project` path only, not the script body; end-to-end real calls verified by tests/test_run_script_integration.py. ⚠️ Not read-only/non-mutating: a script can call minic's `project_save()` and overwrite the caller's `.arm` file in place (confirmed empirically) -- intentional escape-hatch behavior, documented in the tool's docstring, not a gap. `timeout_s` (default 30s) is caller-overridable. |
+
+---
+
+## Current Phase Detail (Phase 5)
+
+| Item / File | State | Notes |
+|---|---|---|
+| `src/armorpaint_mcp/server.py` (`_run_mesh_edit`) | ✅ | shared plumbing for all 7 tools: validates `project`, resolves the edit target (a copy at `output_project` by default, never the caller's own file unless `in_place=True`), runs the tool-specific `minic_call` + `project_save(0)` in one `--script` process; every integration test below verifies the effect independently via a fresh `script_export_mesh` OBJ export, never trusting `ok=True` alone (`tests/_mesh_edit_test_helpers.py`) |
+| `decimate_mesh` | ✅ | end-to-end real call verified: `test_decimate_mesh_reduces_vertex_and_face_count` confirms real vertex AND face count both strictly decrease vs. an independent before/after OBJ export; `test_decimate_mesh_in_place_mutates_the_caller_s_own_file` confirms `in_place=True` mutates the caller's own file (vertex count drops on the same path passed in) |
+| `bevel_mesh` | ✅ | `test_bevel_mesh_adds_geometry` confirms real geometry is added (vertex/face count increases) vs. an independent before/after OBJ export |
+| `subdivide_mesh` | ✅ | `test_subdivide_mesh_quadruples_face_count` confirms an exact 4x face-count relationship (not just "more faces") vs. an independent before/after OBJ export |
+| `smooth_mesh` | ✅ | `test_smooth_mesh_preserves_topology_but_changes_normals` confirms the reversed direction correctly: vertex/face COUNT unchanged (topology preserved), normals DO change -- this is a smoothing op, not a decimation/subdivision op |
+| `duplicate_mesh` | ✅ | `test_duplicate_mesh_doubles_vertex_and_face_count` confirms an exact 2x vertex AND face-count relationship, adding a second object to the scene |
+| `merge_mesh_geometry` | ✅ | `test_merge_mesh_geometry_rejects_a_single_object_project` confirms the precondition guard fires a clear `ok=False` error (not a silent no-op false-positive) on a project with fewer than 2 objects; `test_merge_mesh_geometry_collapses_two_objects_into_one` builds a real 2-object project via `duplicate_mesh` (no multi-object fixture exists yet -- see ROADMAP.md's "Known gaps"), merges it, and confirms via `inspect_project` that exactly 1 object remains |
+| `unwrap_mesh_uvs` | ✅ | `test_unwrap_mesh_uvs_changes_the_uv_coordinates` confirms real UV coordinates change (all 144 `vt` lines differed on the fixture during this phase's spike) while vertex/UV count stays the same (a UV operation, not a geometry operation) |
+| `src/armorpaint_mcp/doctor.py` (`--check` mesh-edit-patch detection) | ✅ | Task 1: `--check` detects whether `AP_BINARY` carries the mesh-edit minic patch and fails clearly (not a confusing "function not found" minic error) when it doesn't; covered by `test_doctor.py` |
+| `smoke/smoke.ps1` | ✅ | run 2026-09-16, 13/13 passed (6 prior probes + 1 new probe per tool for all 7 new tools) |
 
 ---
 
