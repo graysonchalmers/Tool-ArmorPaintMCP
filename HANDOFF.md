@@ -1,74 +1,32 @@
 # 🧭 Session Handoff — Tool-ArmorPaintMCP
 
-_Last updated: 2026-09-16 (wrap-up)_
+_Last updated: 2026-09-16, later same day (wrap-up)_
 
 > The baton. Written by `wrap-up` at session end, read by `pickup` at session start.
 
 ## 🎯 Current state
 
-**Major pivot session: mesh/UV editing is now a first-class part of this
-project, shipped as Phase 5, alongside v1's still-intact texture/material
-tools.** Grayson redirected priority from batch texture/material export
-toward automating mesh fixes (decimate/subdivide/bevel/smooth/duplicate/
-merge/UV-unwrap) and eventually non-destructive mesh replace. A same-session
-spike proved ArmorPaint 1.0's real GUI-only mesh-edit tools can be exposed to
-`--script` via a scoped one-line-per-function patch to `minic_api_list.h` —
-6 of 7 functions patched and empirically verified against real geometry in
-the spike, the 7th (`merge_geometry_down`, targeted 2-object merge) a
-confirmed dead end needing a new accessor. That became [ROADMAP.md](ROADMAP.md)
-(the project's new North Star doc) plus Amendment 3 in the design spec
-(revises, doesn't reverse, the original "no source patching" decision —
-narrowly scoped to register-an-already-working-function patches). A 7-task
-implementation plan
-([docs/superpowers/plans/2026-09-16-phase5-mesh-uv-editing.md](docs/superpowers/plans/2026-09-16-phase5-mesh-uv-editing.md))
-shipped all 7 tools (`decimate_mesh`, `bevel_mesh`, `subdivide_mesh`,
-`smooth_mesh`, `duplicate_mesh`, `merge_mesh_geometry`, `unwrap_mesh_uvs`)
-via subagent-driven-development — every task reviewed clean, a final
-whole-branch review (opus) found 4 cross-task Important findings, one fix
-wave closed all of them, a scoped re-review confirmed clean. **Merged to
-`main` (`b461ff7`, real `--no-ff` merge commit) and pushed** — `origin/main`
-confirmed in sync. v1's five original tools (`reexport_project`,
-`create_procedural_material` + `list_available_presets`, `inspect_project`,
-`run_script`) are unchanged, still shipped and gated (Phase 4's history
-below). Design spec:
-[docs/superpowers/specs/2026-09-15-armorpaint-mcp-design.md](docs/superpowers/specs/2026-09-15-armorpaint-mcp-design.md)
-(now with Amendment 3). Implementation plan: [docs/PLAN.md](docs/PLAN.md)
-(now with a Phase 5 section).
+Phase 5 (shipped/merged/pushed, see below) plus one new thing this session:
+**Grayson's first open-source contribution is live** —
+[armory3d/armorpaint#2139](https://github.com/armory3d/armorpaint/pull/2139),
+upstreaming the Phase 5 mesh-edit `minic_api_list.h` patch. Nothing else
+changed in this project's own tool surface; v1 and Phase 5's 12 tools are
+exactly as they were.
 
 ## 📌 Where we stopped
 
-Phase 5 is done, merged, and pushed. Nothing is mid-flight — a clean,
-fully-verified stopping point. Full detail on both the pivot (brainstorm →
-spike → ROADMAP.md → plan) and the build (7-task SDD execution → final
-review → fix wave → merge) is in this session's log entry below; the short
-version: Grayson redirected priority to mesh/UV automation, a spike proved
-ArmorPaint's GUI-only mesh-edit tools patch cleanly into `--script`, and all
-7 tools shipped through this project's normal brainstorm→plan→SDD→review
-pipeline with nothing skipped.
-
-Verified fresh on the actual merged `main` tree (twice — once right after
-merge, once more after adding a `.env` at the repo root since none existed
-there before): `.venv\Scripts\python.exe -m pytest -q` → **122 passed, 0
-failed, 18 deselected**; `-m integration` (real patched `AP_BINARY`) →
-**18 passed, 0 failed** (one flaky failure on the very first post-merge run,
-`smooth_mesh`'s vertex-count assertion — reran clean twice after; root-caused
-to ArmorPaint's own algorithm, not a merge regression — see project memory
-`armorpaint-smooth-mesh-flaky-vertex-count`, not yet run through
-`smoke\smoke.ps1` this exact session but was 13/13 as part of Phase 5's
-own Task 7 closeout).
+PR #2139 is open, awaiting upstream review. Nothing is mid-flight in this
+repo — the only local change this session was this HANDOFF.md itself.
 
 ## ▶️ Next concrete step
 
-No open phase — `docs/PLAN.md`'s Phase 5 is the last one, and ROADMAP.md
-items 1-7 are all shipped. Real options for next session, none urgent:
+**Wait for upstream review on #2139.** Nothing to do here until a maintainer
+responds. If it comes back with requested changes, amend the branch at
+`graysonchalmers/armorpaint:expose-util-mesh-uv-unwrap-to-minic` (mirrors
+local `spike/minic-decimate` in `C:\Projects-local\z-Git\ArmorPaint`, commit
+`2b528475`) and force-push — don't re-derive the patch from scratch.
 
-- **Upstream the mesh-edit patch as a PR to `armory3d/armorpaint`** —
-  Grayson's stated ambition (his first open-source contribution). The patch
-  (branch `spike/minic-decimate` in `C:\Projects-local\z-Git\ArmorPaint`,
-  unpushed, one file, 7 functions, every line empirically proven) is a
-  strong candidate. Not yet done: read the project's actual contribution
-  guidelines, decide whether to mention the rejected `merge_geometry_down`
-  attempt in the same PR or a follow-up.
+Other options, still none urgent:
 - **ROADMAP.md items 8-10** — non-destructive mesh replace (needs its own
   bisection + a real multi-object fixture), targeted 2-object merge (needs
   a new minic accessor, bigger patch), UV validity check (reachability
@@ -79,6 +37,8 @@ items 1-7 are all shipped. Real options for next session, none urgent:
 
 ## ❓ Open questions
 
+- Upstream review timeline for #2139 is unknown — no maintainer response yet
+  as of this session.
 - Live mode (deferred, not rejected) — two options named in the spec, neither
   chosen; revisit only once batch mode is solid and live mode is actually
   wanted. (Carried over, unchanged this session.)
@@ -95,6 +55,35 @@ items 1-7 are all shipped. Real options for next session, none urgent:
   points before it's worth a real investigation; see project memory.
 
 ## 🗂️ Changed this session
+
+- **This project:** `HANDOFF.md` only (this update).
+- **Sibling repo `C:\Projects-local\z-Git\ArmorPaint`:** rewrote the
+  `spike/minic-decimate` patch's comments to drop internal spike/session
+  references (upstream reviewers don't need to know our project name),
+  amended its single commit to a repo-style message (`paint: expose
+  util_mesh + uv-unwrap operators to minic scripts`, `2b528475`) — same 7
+  functions registered, no functional change. Forked `armory3d/armorpaint`
+  → `graysonchalmers/armorpaint` (new remote `gc-fork` alongside `origin`,
+  which still points upstream), pushed as
+  `expose-util-mesh-uv-unwrap-to-minic`, opened
+  [#2139](https://github.com/armory3d/armorpaint/pull/2139) against
+  `armory3d/armorpaint:main`.
+- **Decision (+ why):** researched upstream norms before writing anything —
+  no `CONTRIBUTING.md` exists, so used two PRs merged that same week
+  (#2117, #2136 — small, single-purpose, Problem/Compatibility/Testing body
+  shape) as the de facto template, after noticing several much larger
+  unrelated "Feat/mcp-*" PRs from another contributor got closed unread
+  within ~30 minutes each. Read as a signal that size/scope, not "mcp"
+  framing, is what gets a PR rejected on sight — our 18-line, one-file patch
+  is well inside the size band that merged. `merge_geometry_down` is named
+  in the PR body as deliberately excluded, not left silent.
+- Commons log: two entries this session (prep, then PR-opened) —
+  `_agent-commons\log\2026-09-16-claude-code-armorpaint-upstream-pr-prep.md`
+  and `...-upstream-pr-opened.md`.
+
+---
+
+## Prior session (Phase 5)
 
 - **Pivot:** [ROADMAP.md](ROADMAP.md) (new — the project's North Star:
   revised purpose, MeshTriage boundary, stack-ranked roadmap, patch policy,
@@ -140,6 +129,49 @@ items 1-7 are all shipped. Real options for next session, none urgent:
 ---
 
 ## 🕓 Session log
+
+### 2026-09-16 (later same day) — upstream PR to armory3d/armorpaint
+- Picked up right after the Phase 5 wrap-up (see the entry directly below —
+  same calendar day, separate session). Grayson's pickup request named the
+  exact next step already recorded in HANDOFF: start the upstream PR, check
+  armory3d/armorpaint's contribution guidelines.
+- Checked the guidelines: no `CONTRIBUTING.md` exists. Pulled the repo's
+  actual recent PR history instead — found two small, single-purpose PRs
+  merged that same week (#2117, #2136) with a consistent
+  Problem/Compatibility/Testing body shape, and, more valuably, three much
+  larger unrelated "Feat/mcp-*" PRs (500-1700 lines, 8-9 files each) from a
+  different contributor, all closed unread within 20-45 minutes with zero
+  comments. Surfaced this as a real finding, not a guess: size/scope, not
+  the "mcp" framing, is almost certainly what gets a PR rejected on sight —
+  our patch (19 lines, 1 file) is well inside the size band that merged
+  twice that week.
+- Presented the finding and a 4-option "choose your next move" rather than
+  unilaterally deciding PR shape (single PR vs. split into 7, more research
+  first, or park it) — publishing to a third-party public repo is
+  explicit-permission territory. Grayson picked "prep the PR" (single PR,
+  matching the merged precedent's size and shape).
+- Cleaned the patch's comments in `spike/minic-decimate`
+  (`C:\Projects-local\z-Git\ArmorPaint`) — the original spike comments
+  referenced internal session artifacts ("see spike report for details"),
+  rewritten to be self-contained for an outside reviewer. Amended the
+  branch's single unpushed commit with the cleaned diff and a repo-style
+  message (`paint: expose util_mesh + uv-unwrap operators to minic
+  scripts`, `2b528475`) — no functional change, same 7 registrations.
+  Drafted the PR title/body in the same session, modeled on #2117's shape.
+- Confirmed no existing fork on Grayson's GitHub account, then stopped and
+  asked before any GitHub-facing action (fork/push/PR-open all touch his
+  public account). Grayson confirmed "run all three."
+- Forked `armory3d/armorpaint` → `graysonchalmers/armorpaint` (GitHub API).
+  Found `gh` already authenticated as `graysonchalmers` locally with SSH —
+  used that to push the branch directly (`git push gc-fork
+  spike/minic-decimate:expose-util-mesh-uv-unwrap-to-minic`) rather than the
+  GitHub API's file-based push, so the real local commit and Grayson's own
+  authorship reached the fork unchanged instead of being re-created via API.
+  Opened the PR: **armory3d/armorpaint#2139**, Grayson's first open-source
+  contribution.
+- Wrote two commons log entries (prep, then PR-opened) and updated this
+  HANDOFF's "Next concrete step" mid-session so a cold pickup wouldn't see
+  stale next-steps if the session had ended right after opening the PR.
 
 ### 2026-09-16 — Phase 5: mesh/UV editing pivot, patch spike, 7-task build, merge + push
 - Picked up with v1 + Minor-findings cleanup already shipped/merged/pushed.
