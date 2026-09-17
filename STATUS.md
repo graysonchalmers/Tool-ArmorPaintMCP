@@ -3,7 +3,7 @@
 > **Living truth.** Updated continuously; never let it flatter the project.
 > States: ✅ verified (gate evidence exists) · 🔌 wired (code exists, no gate yet) · ⬜ not started.
 
-**Last updated:** 2026-09-16
+**Last updated:** 2026-09-17
 **Open phase:** none -- Phase 5 was the last phase in `docs/PLAN.md` (ROADMAP.md
 items 8-10 -- non-destructive mesh replace, targeted 2-object merge, UV
 validity check -- remain open on the roadmap but were never scoped into a
