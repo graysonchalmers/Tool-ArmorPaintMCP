@@ -42,7 +42,8 @@ RENDER_SCRIPT = os.path.join(os.path.dirname(__file__), "_blender_render_obj.py"
 
 
 def _blender_binary() -> str:
-    env = dict(dotenv_values(os.path.join(os.getcwd(), ".env")))
+    dotenv_path = os.environ.get("AP_DOTENV") or os.path.join(os.getcwd(), ".env")
+    env = dict(dotenv_values(dotenv_path))
     env.update({k: v for k, v in os.environ.items() if k == "BLENDER_BINARY"})
     binary = env.get("BLENDER_BINARY", "")
     if not binary or not os.path.isfile(binary):
@@ -119,11 +120,19 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory() as tmp:
         pairs = {
+            # decimate_mesh's numeric reduction doesn't reliably show up
+            # visually in this render -- see STATUS.md Known Issue #4. Don't
+            # assume a re-render will look different just because the numbers
+            # changed.
             "decimate_mesh": _simple_tool(
                 tmp, "decimate_mesh", lambda **kw: decimate_mesh(strength=0.85, **kw)),
             "bevel_mesh": _simple_tool(
                 tmp, "bevel_mesh", lambda **kw: bevel_mesh(amount=0.1, **kw)),
             "subdivide_mesh": _simple_tool(tmp, "subdivide_mesh", subdivide_mesh),
+            # smooth_mesh is flaky -- see STATUS.md Known Issue #4. Re-running
+            # this script has a real chance of committing a degenerate sample;
+            # inspect the regenerated images before committing if this entry
+            # changes.
             "smooth_mesh": _simple_tool(tmp, "smooth_mesh", smooth_mesh),
             "duplicate_mesh": _simple_tool(tmp, "duplicate_mesh", duplicate_mesh),
             "unwrap_mesh_uvs": _simple_tool(tmp, "unwrap_mesh_uvs", unwrap_mesh_uvs),
