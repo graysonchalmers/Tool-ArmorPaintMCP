@@ -107,6 +107,18 @@ regardless.
     asset/shader export from `make.bat`) next to it or it access-violates on
     launch with zero log output. Copy the exe into `paint\build\out\` and
     run it from there.
+- **Mesh/UV editing tools need a patched build, additionally.** 7 of the 12
+  shipped tools (`decimate_mesh`, `bevel_mesh`, `subdivide_mesh`,
+  `smooth_mesh`, `duplicate_mesh`, `merge_mesh_geometry`, `unwrap_mesh_uvs` --
+  the Phase 5 tools) require `AP_BINARY` to point at a build of the same
+  checkout carrying this project's scoped local minic patch (branch
+  `spike/minic-decimate` -- see [ROADMAP.md's "Patch
+  policy"](ROADMAP.md#patch-policy) for the branch, mechanism, and current
+  state). **That branch is currently unpushed/local-only**, so reproducing
+  the full working setup on a fresh machine means building that branch, not
+  just `main`. `ap-mcp --check` reports a clear "mesh-edit patch" failure if
+  the connected `AP_BINARY` is running stock ArmorPaint -- v1's other five
+  tools work fine against a stock binary regardless.
 
 ## Install
 
@@ -143,10 +155,12 @@ pwsh smoke/smoke.ps1
 ```
 
 Headless proof the project is alive: package imports, `--version` and
-`--help` exit 0, and every shipped tool (`reexport_project`,
-`create_procedural_material`, `inspect_project`, `run_script`, and the 7
-mesh/UV editing tools) is registered as an MCP tool. Each phase adds a probe
-here.
+`--help` exit 0, and 10 of the 12 shipped tools (`reexport_project`,
+`inspect_project`, `run_script`, and the 7 mesh/UV editing tools) each have
+their own MCP-registration probe -- 13 probes total (3 base + those 10).
+`create_procedural_material` and `list_available_presets` are exercised by
+the unit/integration tests but don't have their own smoke probe yet. Each
+phase adds a probe here.
 
 ```bash
 pytest -q                # unit tests (fast, no ArmorPaint process)

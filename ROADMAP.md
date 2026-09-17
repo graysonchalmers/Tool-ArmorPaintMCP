@@ -92,9 +92,12 @@ unaffected.
   needs touching when the target C function already exists (contrast: a genuinely
   new C function, like `script_timeline_resume`/`_pause`, needs three files).
 - **Current state:** branch `spike/minic-decimate` in the ArmorPaint checkout,
-  unpushed, one file changed, 7 functions attempted, 6 registered and empirically
-  verified, 1 confirmed a real dead end (see roadmap item 9). Incremental rebuild
-  after the full batch: 2.3s.
+  unpushed, one file changed, 7 functions registered and empirically verified.
+  A further function, `util_mesh_merge_geometry_down` (the GUI's targeted
+  "merge with the object below"), was considered and rejected as a one-liner
+  -- it needs a new minic accessor for "the other object" that doesn't exist,
+  not just a registration (see roadmap item 9); it was never actually
+  attempted/registered. Incremental rebuild after the full batch: 2.3s.
 - **Upstream ambition:** Grayson wants to submit this as a PR to
   `armory3d/armorpaint` — his first open-source contribution. The patch is a strong
   candidate for that: small, mechanical, every line empirically proven against real
@@ -105,10 +108,10 @@ unaffected.
   expose headlessly.
 - **Until upstream lands (if it does):** Tool-ArmorPaintMCP's own `AP_BINARY` must
   point at a build carrying this patch, not stock ArmorPaint. This is a new
-  operational dependency the project didn't have before — needs a `--check`
-  preflight update once these tools are actually wired into `server.py`, so a
-  caller pointed at an unpatched binary gets a clear error instead of a silent
-  "function not found" minic failure.
+  operational dependency the project didn't have before — covered by a
+  `--check` preflight "mesh-edit patch" check (see `src/armorpaint_mcp/doctor.py`),
+  shipped alongside Phase 5's tools, so a caller pointed at an unpatched binary
+  gets a clear error instead of a silent "function not found" minic failure.
 
 ## Known gaps / open questions
 
