@@ -12,6 +12,7 @@ from armorpaint_mcp.catalog import (
     blend_modes,
     extract_project_state,
     layer_blend_modes,
+    mesh_edit_patch_missing,
     scene_objects,
 )
 
@@ -110,3 +111,35 @@ def test_layer_blend_modes_has_18_entries_and_no_exclusion():
     assert modes[12] == "Subtract"
     assert modes[17] == "Value"
     assert "Exclusion" not in modes
+
+
+def test_mesh_edit_patch_missing_reports_all_seven_when_none_present():
+    stock_api_text = "// ArmorPaint script API\n\ntypedef struct i8_array_t {\n"
+    missing = mesh_edit_patch_missing(stock_api_text)
+    assert sorted(missing) == sorted([
+        "util_mesh_decimate", "util_mesh_smooth", "util_mesh_bevel",
+        "util_mesh_subdivide", "util_mesh_merge_geometry",
+        "util_mesh_duplicate", "plugin_uv_unwrap_button",
+    ])
+
+
+def test_mesh_edit_patch_missing_empty_when_all_present():
+    patched_api_text = (
+        "util_mesh_decimate(f strength)\n"
+        "util_mesh_smooth()\n"
+        "util_mesh_bevel(f amount)\n"
+        "util_mesh_subdivide()\n"
+        "util_mesh_merge_geometry()\n"
+        "util_mesh_duplicate()\n"
+        "plugin_uv_unwrap_button()\n"
+    )
+    assert mesh_edit_patch_missing(patched_api_text) == []
+
+
+def test_mesh_edit_patch_missing_reports_only_the_absent_ones():
+    partial = "util_mesh_decimate(f strength)\nutil_mesh_smooth()\n"
+    missing = mesh_edit_patch_missing(partial)
+    assert "util_mesh_decimate" not in missing
+    assert "util_mesh_smooth" not in missing
+    assert "util_mesh_bevel" in missing
+    assert len(missing) == 5

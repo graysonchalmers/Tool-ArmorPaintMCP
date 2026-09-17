@@ -7,7 +7,9 @@ from armorpaint_mcp import server
 from armorpaint_mcp.catalog import CatalogError
 from armorpaint_mcp.runner import DEFAULT_TIMEOUT_S, ExportResult, ApiResult, ScriptResult
 from armorpaint_mcp.server import (mcp, reexport_project, create_procedural_material,
-                                   list_available_presets, inspect_project, run_script)
+                                   list_available_presets, inspect_project, run_script,
+                                   decimate_mesh, bevel_mesh, subdivide_mesh, smooth_mesh,
+                                   duplicate_mesh, merge_mesh_geometry, unwrap_mesh_uvs)
 
 
 @pytest.fixture(autouse=True)
@@ -523,3 +525,343 @@ def test_run_script_is_registered_as_an_mcp_tool():
     tool = by_name["run_script"]
     assert set(tool.input_schema["properties"]) == {"project", "script", "timeout_s"}
     assert set(tool.input_schema.get("required", [])) == {"project", "script"}
+
+
+def test_decimate_mesh_requires_output_project_unless_in_place(tmp_path):
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg:
+        mock_cfg.return_value.binary = str(tmp_path / "ArmorPaint.exe")
+        mock_cfg.return_value.allowed_roots = []
+        result = decimate_mesh(project=str(project), strength=0.5)
+
+    assert result["ok"] is False
+    assert "output_project is required" in result["error"]
+
+
+def test_decimate_mesh_rejects_output_project_together_with_in_place(tmp_path):
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg:
+        mock_cfg.return_value.binary = str(tmp_path / "ArmorPaint.exe")
+        mock_cfg.return_value.allowed_roots = []
+        result = decimate_mesh(project=str(project), strength=0.5,
+                               output_project=str(tmp_path / "out.arm"), in_place=True)
+
+    assert result["ok"] is False
+    assert "in_place=True" in result["error"]
+
+
+def test_decimate_mesh_rejects_a_nonexistent_project_path(tmp_path):
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg:
+        mock_cfg.return_value.binary = str(tmp_path / "ArmorPaint.exe")
+        mock_cfg.return_value.allowed_roots = []
+        result = decimate_mesh(project=str(tmp_path / "nope.arm"), strength=0.5,
+                               output_project=str(tmp_path / "out.arm"))
+
+    assert result["ok"] is False
+    assert "not an existing .arm project file" in result["error"]
+    assert result["output_project"] is None
+
+
+def test_decimate_mesh_copies_then_edits_and_saves(tmp_path):
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
+    output_project = tmp_path / "out.arm"
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
+        mock_cfg.return_value.binary = "ArmorPaint.exe"
+        mock_cfg.return_value.allowed_roots = []
+        mock_run.return_value = ScriptResult(ok=True, stdout="", stderr="")
+
+        result = decimate_mesh(project=str(project), strength=0.5,
+                               output_project=str(output_project))
+
+    assert result == {"ok": True, "output_project": str(output_project), "error": None}
+    assert output_project.exists()  # shutil.copy2 actually ran
+    script_arg = mock_run.call_args[0][2]
+    assert "util_mesh_decimate(0.5);" in script_arg
+    assert "project_save(0);" in script_arg
+
+
+def test_decimate_mesh_is_registered_as_an_mcp_tool():
+    tools = asyncio.run(mcp.list_tools())
+    by_name = {t.name: t for t in tools}
+    assert "decimate_mesh" in by_name, sorted(by_name)
+    tool = by_name["decimate_mesh"]
+    assert set(tool.input_schema["properties"]) == {
+        "project", "strength", "output_project", "in_place", "timeout_s"}
+    assert set(tool.input_schema.get("required", [])) == {"project", "strength"}
+
+
+def test_decimate_mesh_rejects_output_project_same_as_project(tmp_path):
+    """Cross-task finding (final whole-branch review): output_project naming
+    the same file as project (directly, or via a directory path that
+    resolves to it) used to make shutil.copy2 raise uncaught -- observed as
+    PermissionError [WinError 32] on this machine, though shutil.copy2
+    documents SameFileError for the exact-same-path case. Either way, the
+    exception escaped _run_mesh_edit entirely, which the MCP layer surfaces
+    as an opaque UnexpectedToolError instead of this project's established
+    {"ok": False, ...} contract every tool's docstring promises. This must
+    return a clean failure instead of raising -- shares _run_mesh_edit with
+    every other mesh-edit tool, so decimate_mesh alone proves the fix for
+    all of them."""
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg:
+        mock_cfg.return_value.binary = "ArmorPaint.exe"
+        mock_cfg.return_value.allowed_roots = []
+        # No mock on run_minic_script -- if this reaches it (i.e. the guard
+        # didn't catch the same-file case), the test would raise/hang instead
+        # of asserting cleanly, which is itself a signal something's wrong.
+        result = decimate_mesh(project=str(project), strength=0.5,
+                               output_project=str(project))
+
+    assert result["ok"] is False
+    assert result["output_project"] is None
+    assert "same file" in result["error"]
+    assert "in_place=True" in result["error"]
+
+
+def test_decimate_mesh_converts_copy_failure_to_clean_error(tmp_path):
+    """Any OTHER shutil.copy2 failure (permissions, disk full, etc. -- not
+    just the same-file case) must also be converted to this project's
+    standard failure shape rather than escaping uncaught."""
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
+    output_project = tmp_path / "out.arm"
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.shutil.copy2",
+               side_effect=OSError("disk full")):
+        mock_cfg.return_value.binary = "ArmorPaint.exe"
+        mock_cfg.return_value.allowed_roots = []
+        result = decimate_mesh(project=str(project), strength=0.5,
+                               output_project=str(output_project))
+
+    assert result["ok"] is False
+    assert result["output_project"] is None
+    assert "disk full" in result["error"]
+
+
+def test_decimate_mesh_removes_stale_copy_on_script_failure(tmp_path):
+    """Cross-task finding: when run_minic_script fails after the copy was
+    already made at output_project, the stale copy (still containing the
+    ORIGINAL unedited project) used to be left on disk while the tool
+    reported output_project: None -- indistinguishable from a normal, valid
+    .arm file to anyone who found it later. The copy must be cleaned up on
+    failure when in_place=False (never touched when in_place=True, since
+    target there IS the caller's own project)."""
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
+    output_project = tmp_path / "out.arm"
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
+        mock_cfg.return_value.binary = "ArmorPaint.exe"
+        mock_cfg.return_value.allowed_roots = []
+        mock_run.return_value = ScriptResult(
+            ok=False, stdout="", stderr="", error="'--script' exited 1")
+
+        result = decimate_mesh(project=str(project), strength=0.5,
+                               output_project=str(output_project))
+
+    assert result["ok"] is False
+    assert result["output_project"] is None
+    # The real assertion: shutil.copy2 really ran for real (this is not
+    # mocked), so this proves the copy was actually cleaned up, not just
+    # that the mock was never called.
+    assert not output_project.exists()
+
+
+def test_decimate_mesh_in_place_failure_does_not_delete_project(tmp_path):
+    """The in_place=True counterpart: target IS the caller's own project
+    there, so a failure must never delete it -- the timeout/failure error
+    message already tells the caller to "inspect the project directly",
+    which is only correct if the file is still there to inspect."""
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
+        mock_cfg.return_value.binary = "ArmorPaint.exe"
+        mock_cfg.return_value.allowed_roots = []
+        mock_run.return_value = ScriptResult(
+            ok=False, stdout="", stderr="", error="'--script' exited 1")
+
+        result = decimate_mesh(project=str(project), strength=0.5, in_place=True)
+
+    assert result["ok"] is False
+    assert project.exists()
+
+
+def test_bevel_mesh_calls_the_right_minic_function(tmp_path):
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
+    output_project = tmp_path / "out.arm"
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
+        mock_cfg.return_value.binary = "ArmorPaint.exe"
+        mock_cfg.return_value.allowed_roots = []
+        mock_run.return_value = ScriptResult(ok=True, stdout="", stderr="")
+
+        result = bevel_mesh(project=str(project), amount=0.1,
+                            output_project=str(output_project))
+
+    assert result["ok"] is True
+    assert "util_mesh_bevel(0.1);" in mock_run.call_args[0][2]
+
+
+def test_subdivide_mesh_calls_the_right_minic_function(tmp_path):
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
+    output_project = tmp_path / "out.arm"
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
+        mock_cfg.return_value.binary = "ArmorPaint.exe"
+        mock_cfg.return_value.allowed_roots = []
+        mock_run.return_value = ScriptResult(ok=True, stdout="", stderr="")
+
+        result = subdivide_mesh(project=str(project), output_project=str(output_project))
+
+    assert result["ok"] is True
+    assert "util_mesh_subdivide();" in mock_run.call_args[0][2]
+
+
+def test_bevel_mesh_is_registered_as_an_mcp_tool():
+    tools = asyncio.run(mcp.list_tools())
+    by_name = {t.name: t for t in tools}
+    assert "bevel_mesh" in by_name, sorted(by_name)
+    assert set(by_name["bevel_mesh"].input_schema.get("required", [])) == {"project", "amount"}
+
+
+def test_subdivide_mesh_is_registered_as_an_mcp_tool():
+    tools = asyncio.run(mcp.list_tools())
+    by_name = {t.name: t for t in tools}
+    assert "subdivide_mesh" in by_name, sorted(by_name)
+    assert set(by_name["subdivide_mesh"].input_schema.get("required", [])) == {"project"}
+
+
+def test_smooth_mesh_calls_the_right_minic_function(tmp_path):
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
+    output_project = tmp_path / "out.arm"
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
+        mock_cfg.return_value.binary = "ArmorPaint.exe"
+        mock_cfg.return_value.allowed_roots = []
+        mock_run.return_value = ScriptResult(ok=True, stdout="", stderr="")
+
+        result = smooth_mesh(project=str(project), output_project=str(output_project))
+
+    assert result["ok"] is True
+    assert "util_mesh_smooth();" in mock_run.call_args[0][2]
+
+
+def test_duplicate_mesh_calls_the_right_minic_function(tmp_path):
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
+    output_project = tmp_path / "out.arm"
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
+        mock_cfg.return_value.binary = "ArmorPaint.exe"
+        mock_cfg.return_value.allowed_roots = []
+        mock_run.return_value = ScriptResult(ok=True, stdout="", stderr="")
+
+        result = duplicate_mesh(project=str(project), output_project=str(output_project))
+
+    assert result["ok"] is True
+    assert "util_mesh_duplicate();" in mock_run.call_args[0][2]
+
+
+def test_smooth_mesh_is_registered_as_an_mcp_tool():
+    tools = asyncio.run(mcp.list_tools())
+    by_name = {t.name: t for t in tools}
+    assert "smooth_mesh" in by_name, sorted(by_name)
+
+
+def test_duplicate_mesh_is_registered_as_an_mcp_tool():
+    tools = asyncio.run(mcp.list_tools())
+    by_name = {t.name: t for t in tools}
+    assert "duplicate_mesh" in by_name, sorted(by_name)
+
+
+def test_merge_mesh_geometry_rejects_fewer_than_two_objects(tmp_path):
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
+
+    api_text = (
+        "/* Current project state:\n{}\n\nScene objects in world space:\n"
+        '"Tessellated": location (0.0, 0.0, 0.0), size (1.0, 1.0, 1.0)\n')
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_api") as mock_api:
+        mock_cfg.return_value.binary = "ArmorPaint.exe"
+        mock_cfg.return_value.allowed_roots = []
+        mock_api.return_value = ApiResult(ok=True, text=api_text)
+
+        result = merge_mesh_geometry(project=str(project), output_project=str(tmp_path / "out.arm"))
+
+    assert result["ok"] is False
+    assert "only 1 object" in result["error"]
+
+
+def test_merge_mesh_geometry_calls_the_right_minic_function_when_enough_objects(tmp_path):
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
+    output_project = tmp_path / "out.arm"
+
+    api_text = (
+        "/* Current project state:\n{}\n\nScene objects in world space:\n"
+        '"A": location (0.0, 0.0, 0.0), size (1.0, 1.0, 1.0)\n'
+        '"B": location (1.0, 0.0, 0.0), size (1.0, 1.0, 1.0)\n')
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_api") as mock_api, \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
+        mock_cfg.return_value.binary = "ArmorPaint.exe"
+        mock_cfg.return_value.allowed_roots = []
+        mock_api.return_value = ApiResult(ok=True, text=api_text)
+        mock_run.return_value = ScriptResult(ok=True, stdout="", stderr="")
+
+        result = merge_mesh_geometry(project=str(project), output_project=str(output_project))
+
+    assert result["ok"] is True
+    assert "util_mesh_merge_geometry();" in mock_run.call_args[0][2]
+
+
+def test_merge_mesh_geometry_is_registered_as_an_mcp_tool():
+    tools = asyncio.run(mcp.list_tools())
+    by_name = {t.name: t for t in tools}
+    assert "merge_mesh_geometry" in by_name, sorted(by_name)
+
+
+def test_unwrap_mesh_uvs_calls_the_right_minic_function(tmp_path):
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
+    output_project = tmp_path / "out.arm"
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
+        mock_cfg.return_value.binary = "ArmorPaint.exe"
+        mock_cfg.return_value.allowed_roots = []
+        mock_run.return_value = ScriptResult(ok=True, stdout="", stderr="")
+
+        result = unwrap_mesh_uvs(project=str(project), output_project=str(output_project))
+
+    assert result["ok"] is True
+    assert "plugin_uv_unwrap_button();" in mock_run.call_args[0][2]
+
+
+def test_unwrap_mesh_uvs_is_registered_as_an_mcp_tool():
+    tools = asyncio.run(mcp.list_tools())
+    by_name = {t.name: t for t in tools}
+    assert "unwrap_mesh_uvs" in by_name, sorted(by_name)

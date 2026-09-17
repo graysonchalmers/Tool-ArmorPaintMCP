@@ -40,9 +40,12 @@ explicitly deferred, not rejected — see the spec's "Deferred: live mode".
   and `& "C:\path\tool.exe"` for quoted executables. `&&` is a parse error.
 - Python: `C:\Program Files\Python313\python.exe` (3.13). Project venv at
   `.venv\` (created via `python -m venv .venv`).
-- ArmorPaint checkout: `C:\Projects-local\z-Git\ArmorPaint` (`main`,
-  from-scratch C/"iron"+Kore engine rewrite; straight upstream clone, don't
-  carry local patches into it without flagging).
+- ArmorPaint checkout: `C:\Projects-local\z-Git\ArmorPaint` (from-scratch
+  C/"iron"+Kore engine rewrite). Currently on branch `spike/minic-decimate`,
+  carrying local commit `fbef46e7` -- this IS the flagged local patch (the
+  scoped mesh-edit patch Phase 5's 7 mesh/UV tools depend on; see
+  ROADMAP.md's "Patch policy"), unpushed. Not a straight upstream clone
+  right now -- flag any further local changes on top of it the same way.
 - Reference implementation (for comparison only, not a dependency):
   `C:\Projects-local\z-Git\armorpaint-mcp`.
 - Config lives in `.env` (copy from `.env.example`). Never echo its contents.

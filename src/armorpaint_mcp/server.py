@@ -1,4 +1,5 @@
 import os
+import shutil
 import sys
 
 from mcp.server.mcpserver import MCPServer
@@ -11,7 +12,7 @@ from armorpaint_mcp.catalog import (CatalogError, extract_project_state,
 from armorpaint_mcp.paths import ensure_within_roots, PathNotAllowed
 from armorpaint_mcp.runner import (DEFAULT_TIMEOUT_S, export_textures, list_export_presets,
                                    run_api, run_minic_script, run_procedural_material)
-from armorpaint_mcp.script_gen import generate_script, NodeSpecError
+from armorpaint_mcp.script_gen import _finite_float, generate_script, NodeSpecError
 
 # Startup is lazy: importing this module must NOT validate config, so
 # `ap-mcp --check` / `--version` work even when config is broken (the exact
@@ -50,6 +51,308 @@ def _is_arm_project_file(path: str) -> bool:
     launching ArmorPaint, or a typo'd path would report ok:True against
     that phantom default project's data instead of an error."""
     return os.path.isfile(path) and path.lower().endswith(".arm")
+
+
+def _run_mesh_edit(project: str, minic_call: str, output_project: str | None,
+                   in_place: bool, timeout_s: float) -> dict:
+    """Shared plumbing for every mesh-edit tool: validate `project`, resolve
+    the edit target (a copy at `output_project` by default -- never touching
+    the caller's own file unless `in_place=True`), run `minic_call` followed
+    by project_save(0) against that target, and report the outcome.
+
+    ok=True proves only that the ArmorPaint process completed and
+    project_save(0) ran -- same caveat as run_script and every other minic
+    call in this project (see run_script's docstring). `minic_call` here is
+    always one of this project's own, already-verified function calls
+    (never caller-supplied text), so the practical risk is much narrower
+    than run_script's arbitrary-script case, but the underlying guarantee
+    is identical.
+
+    Returns {"ok": bool, "output_project": str | None, "error": str | None}."""
+    cfg = _ensure_ready()
+
+    try:
+        project = ensure_within_roots(project, cfg.allowed_roots)
+    except PathNotAllowed as exc:
+        return _failure(str(exc), "output_project")
+
+    if not _is_arm_project_file(project):
+        return _failure(f"'{project}' is not an existing .arm project file",
+                        "output_project")
+
+    if in_place:
+        if output_project is not None:
+            return _failure(
+                "output_project must not be set when in_place=True (the "
+                "caller's own project is mutated directly)", "output_project")
+        target = project
+    else:
+        if not output_project:
+            return _failure(
+                "output_project is required unless in_place=True (mutating "
+                "operations default to a copy, never the caller's own file)",
+                "output_project")
+        try:
+            output_project = ensure_within_roots(output_project, cfg.allowed_roots)
+        except PathNotAllowed as exc:
+            return _failure(str(exc), "output_project")
+        # A same-file output_project (directly, or via a directory path that
+        # resolves to the same file) would make shutil.copy2 raise -- observed
+        # as PermissionError [WinError 32] on this machine, though
+        # shutil.copy2 documents SameFileError for the exact-same-path case.
+        # Which exception actually fires can vary, so this is checked
+        # up front rather than caught by type.
+        if os.path.realpath(project) == os.path.realpath(output_project):
+            return _failure(
+                "output_project must not be the same file as project -- use "
+                "in_place=True to edit project itself", "output_project")
+        os.makedirs(os.path.dirname(output_project) or ".", exist_ok=True)
+        try:
+            shutil.copy2(project, output_project)
+        except OSError as exc:
+            # Any other copy failure (permissions, disk full, etc.) -- convert
+            # to this project's standard failure shape instead of letting it
+            # escape as an opaque, uncaught exception.
+            return _failure(f"failed to copy project to output_project: {exc}",
+                            "output_project")
+        target = output_project
+
+    script = f"void main() {{\n\t{minic_call}\n\tproject_save(0);\n}}\n"
+    result = run_minic_script(cfg.binary, target, script, timeout_s)
+    if not result.ok:
+        if not in_place:
+            # A copy was made at `target` above; it's now a stale, unedited
+            # duplicate of the original project (run_minic_script failed
+            # before or during project_save(0)). Leaving it on disk would
+            # look like a normal, valid .arm file to anyone who finds it
+            # later, with no indication it was never actually edited.
+            # Best-effort cleanup: a deletion failure must not mask the
+            # original error. Never touched when in_place=True, since target
+            # there IS the caller's own project.
+            try:
+                os.remove(target)
+            except OSError:
+                pass
+        return _failure(result.error, "output_project")
+    return {"ok": True, "output_project": target, "error": None}
+
+
+def decimate_mesh(project: str, strength: float, output_project: str | None = None,
+                  in_place: bool = False, timeout_s: float = DEFAULT_TIMEOUT_S) -> dict:
+    """Reduce the project's mesh polycount via ArmorPaint's own decimate
+    algorithm (util_mesh_decimate -- a real, working GUI tool as of
+    ArmorPaint 1.0, exposed to --script by this project's scoped local
+    patch; see ROADMAP.md's "Patch policy"). `strength` is 0.0-1.0-ish
+    (ArmorPaint's own GUI default is 0.5); higher removes more geometry.
+    Operates on a copy of `project` by default -- pass in_place=True to
+    mutate `project` itself instead, in which case output_project must be
+    omitted. Requires AP_BINARY to be a build carrying the mesh-edit patch
+    (run `ap-mcp --check` to confirm). Bounded by AP_ALLOWED_ROOTS when set.
+
+    ok=True proves the ArmorPaint process completed and saved -- not that
+    the reduction looks good; inspect the result yourself for anything
+    beyond "did geometry change" (verified by this tool's own test suite via
+    real vertex/face counts, not asserted here at runtime).
+
+    Returns {"ok": bool, "output_project": str | None, "error": str | None}."""
+    try:
+        strength = _finite_float("strength", strength)
+    except NodeSpecError as exc:
+        return _failure(str(exc), "output_project")
+    return _run_mesh_edit(project, f"util_mesh_decimate({strength});",
+                          output_project, in_place, timeout_s)
+
+
+mcp.tool()(decimate_mesh)
+
+
+def bevel_mesh(project: str, amount: float, output_project: str | None = None,
+               in_place: bool = False, timeout_s: float = DEFAULT_TIMEOUT_S) -> dict:
+    """Bevel the project's mesh edges via ArmorPaint's own bevel algorithm
+    (util_mesh_bevel -- exposed to --script by this project's scoped local
+    patch; see ROADMAP.md's "Patch policy"). `amount` is the bevel distance
+    (ArmorPaint's own GUI default is 0.1). Operates on a copy of `project`
+    by default -- pass in_place=True to mutate `project` itself instead, in
+    which case output_project must be omitted. Requires AP_BINARY to be a
+    build carrying the mesh-edit patch (run `ap-mcp --check` to confirm).
+    Bounded by AP_ALLOWED_ROOTS when set.
+
+    ok=True proves the ArmorPaint process completed and saved -- not that
+    the bevel looks good.
+
+    Returns {"ok": bool, "output_project": str | None, "error": str | None}."""
+    try:
+        amount = _finite_float("amount", amount)
+    except NodeSpecError as exc:
+        return _failure(str(exc), "output_project")
+    return _run_mesh_edit(project, f"util_mesh_bevel({amount});",
+                          output_project, in_place, timeout_s)
+
+
+mcp.tool()(bevel_mesh)
+
+
+def subdivide_mesh(project: str, output_project: str | None = None,
+                   in_place: bool = False, timeout_s: float = DEFAULT_TIMEOUT_S) -> dict:
+    """Subdivide the project's mesh via ArmorPaint's own subdivide algorithm
+    (util_mesh_subdivide -- exposed to --script by this project's scoped
+    local patch; see ROADMAP.md's "Patch policy"). Confirmed empirically to
+    be an exact 4x face-count operation on this build. Operates on a copy of
+    `project` by default -- pass in_place=True to mutate `project` itself
+    instead, in which case output_project must be omitted. Requires
+    AP_BINARY to be a build carrying the mesh-edit patch (run `ap-mcp
+    --check` to confirm). Bounded by AP_ALLOWED_ROOTS when set.
+
+    ok=True proves only that the ArmorPaint process completed and saved --
+    not that the subdivision looks good; inspect the result yourself for
+    anything beyond "did geometry change" (verified by this tool's own test
+    suite via real face-count diffs, not asserted here at runtime).
+
+    Returns {"ok": bool, "output_project": str | None, "error": str | None}."""
+    return _run_mesh_edit(project, "util_mesh_subdivide();",
+                          output_project, in_place, timeout_s)
+
+
+mcp.tool()(subdivide_mesh)
+
+
+def smooth_mesh(project: str, output_project: str | None = None,
+                in_place: bool = False, timeout_s: float = DEFAULT_TIMEOUT_S) -> dict:
+    """Smooth the project's mesh via ArmorPaint's own smoothing algorithm
+    (util_mesh_smooth -- exposed to --script by this project's scoped local
+    patch; see ROADMAP.md's "Patch policy"). Does not change vertex/face
+    count (confirmed empirically), only vertex positions and normals.
+    Operates on a copy of `project` by default -- pass in_place=True to
+    mutate `project` itself instead, in which case output_project must be
+    omitted. Requires AP_BINARY to be a build carrying the mesh-edit patch
+    (run `ap-mcp --check` to confirm). Bounded by AP_ALLOWED_ROOTS when set.
+
+    ok=True proves only that the ArmorPaint process completed and saved --
+    not that the smoothing looks good; inspect the result yourself for
+    anything beyond "did vertex positions/normals change" (verified by this
+    tool's own test suite via real geometry diffs, not asserted here at
+    runtime).
+
+    Returns {"ok": bool, "output_project": str | None, "error": str | None}."""
+    return _run_mesh_edit(project, "util_mesh_smooth();",
+                          output_project, in_place, timeout_s)
+
+
+mcp.tool()(smooth_mesh)
+
+
+def duplicate_mesh(project: str, output_project: str | None = None,
+                   in_place: bool = False, timeout_s: float = DEFAULT_TIMEOUT_S) -> dict:
+    """Duplicate the project's mesh object via ArmorPaint's own duplicate
+    function (util_mesh_duplicate -- exposed to --script by this project's
+    scoped local patch; see ROADMAP.md's "Patch policy"). Confirmed
+    empirically to be an exact 2x vertex/face-count operation, adding a
+    second object to the scene. Operates on a copy of `project` by default
+    -- pass in_place=True to mutate `project` itself instead, in which case
+    output_project must be omitted. Requires AP_BINARY to be a build
+    carrying the mesh-edit patch (run `ap-mcp --check` to confirm). Bounded
+    by AP_ALLOWED_ROOTS when set.
+
+    ok=True proves only that the ArmorPaint process completed and saved --
+    not that the duplication looks good; inspect the result yourself for
+    anything beyond "did the object/vertex/face count double" (verified by
+    this tool's own test suite via real vertex/face counts, not asserted
+    here at runtime).
+
+    Returns {"ok": bool, "output_project": str | None, "error": str | None}."""
+    return _run_mesh_edit(project, "util_mesh_duplicate();",
+                          output_project, in_place, timeout_s)
+
+
+mcp.tool()(duplicate_mesh)
+
+
+def merge_mesh_geometry(project: str, output_project: str | None = None,
+                        in_place: bool = False, timeout_s: float = DEFAULT_TIMEOUT_S) -> dict:
+    """Merge every object in the project into one, via ArmorPaint's own
+    util_mesh_merge_geometry (exposed to --script by this project's scoped
+    local patch; see ROADMAP.md's "Patch policy").
+
+    IMPORTANT: this merges ALL objects in the project, not a specific pair.
+    ArmorPaint's GUI "merge with the object below" targeting
+    (util_mesh_merge_geometry_down) needs a second minic accessor that does
+    not exist -- see ROADMAP.md item 9. There is no way to merge only two
+    of three-or-more objects with this tool.
+
+    Requires at least 2 objects in the project -- util_mesh_merge_geometry
+    silently no-ops (by its own internal guard) on a project with fewer,
+    confirmed empirically. This tool checks the object count itself first
+    (via inspect_project's same --api machinery) and returns a clear error
+    rather than a false ok=True with zero visible effect.
+
+    Operates on a copy of `project` by default -- pass in_place=True to
+    mutate `project` itself instead, in which case output_project must be
+    omitted. Requires AP_BINARY to be a build carrying the mesh-edit patch
+    (run `ap-mcp --check` to confirm). Bounded by AP_ALLOWED_ROOTS when set.
+
+    Returns {"ok": bool, "output_project": str | None, "error": str | None}."""
+    cfg = _ensure_ready()
+
+    try:
+        checked_project = ensure_within_roots(project, cfg.allowed_roots)
+    except PathNotAllowed as exc:
+        return _failure(str(exc), "output_project")
+
+    if not _is_arm_project_file(checked_project):
+        return _failure(f"'{checked_project}' is not an existing .arm project file",
+                        "output_project")
+
+    api_result = run_api(cfg.binary, checked_project)
+    if not api_result.ok:
+        return _failure(api_result.error, "output_project")
+
+    try:
+        objects = scene_objects(api_result.text)
+    except CatalogError as exc:
+        return _failure(str(exc), "output_project")
+
+    if len(objects) < 2:
+        return _failure(
+            f"project has only {len(objects)} object(s); merge_mesh_geometry "
+            f"needs at least 2 (util_mesh_merge_geometry collapses ALL objects "
+            f"in the project into one and silently does nothing with fewer -- "
+            f"see this tool's docstring for why a specific-pair merge isn't "
+            f"possible)", "output_project")
+
+    return _run_mesh_edit(project, "util_mesh_merge_geometry();",
+                          output_project, in_place, timeout_s)
+
+
+mcp.tool()(merge_mesh_geometry)
+
+
+def unwrap_mesh_uvs(project: str, output_project: str | None = None,
+                    in_place: bool = False, timeout_s: float = DEFAULT_TIMEOUT_S) -> dict:
+    """Re-unwrap the project's mesh UVs via ArmorPaint's own real, built-in
+    unwrap algorithm (plugin_uv_unwrap_button -- calls proc_uv_unwrap()
+    directly, NOT a loaded plugin despite the C function's name; exposed to
+    --script by this project's scoped local patch; see ROADMAP.md's "Patch
+    policy"). Confirmed empirically to genuinely change UV coordinates
+    (unlike a no-op), unwrap quality/atlas-efficiency vs. xatlas
+    (Tool-MeshTriage's unwrapper) has not been compared -- see ROADMAP.md's
+    "Known gaps" before relying on this for production-quality UVs.
+
+    Operates on a copy of `project` by default -- pass in_place=True to
+    mutate `project` itself instead, in which case output_project must be
+    omitted. Requires AP_BINARY to be a build carrying the mesh-edit patch
+    (run `ap-mcp --check` to confirm). Bounded by AP_ALLOWED_ROOTS when set.
+
+    ok=True proves only that the ArmorPaint process completed and saved --
+    not that the unwrap looks good (that's a separate claim from the
+    unverified-quality-vs-xatlas caveat above; verified here only via real
+    UV-coordinate diffs showing a change, not asserted here at runtime).
+
+    Returns {"ok": bool, "output_project": str | None, "error": str | None}."""
+    return _run_mesh_edit(project, "plugin_uv_unwrap_button();",
+                          output_project, in_place, timeout_s)
+
+
+mcp.tool()(unwrap_mesh_uvs)
 
 
 def reexport_project(project: str, preset: str, output_dir: str) -> dict:

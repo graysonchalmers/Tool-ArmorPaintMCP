@@ -59,7 +59,9 @@ progress.
 > not a rebake tool. See `docs/PLAN.md`'s Phase 2 section for the full
 > scope and gate.
 
-> **Amendment 3: scoped patch policy for mesh/UV (2026-09-16):** Grayson's
+## Amendment 3: scoped patch policy for mesh/UV (2026-09-16)
+
+> Grayson's
 > priority pivoted to mesh/UV automation (see
 > [ROADMAP.md](../../../ROADMAP.md) for the full North Star, roadmap, and
 > rationale). ArmorPaint 1.0 shipped real mesh-editing tools

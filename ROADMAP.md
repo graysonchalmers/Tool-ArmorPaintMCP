@@ -54,13 +54,13 @@ MeshTriage, and MeshTriage's scope is unaffected by this pivot.
 
 | # | Item | Status |
 |---|---|---|
-| 1 | `unwrap_mesh_uvs` | 🔬 proven (`plugin_uv_unwrap_button` → real `proc_uv_unwrap`, not plugin-dependent) — not yet an MCP tool |
-| 2 | `decimate_mesh` | 🔬 proven (`util_mesh_decimate`, real triangle-count reduction) — not yet an MCP tool |
-| 3 | `subdivide_mesh` | 🔬 proven (`util_mesh_subdivide`, exact 4× face count) — not yet an MCP tool |
-| 4 | `bevel_mesh` | 🔬 proven (`util_mesh_bevel`) — not yet an MCP tool |
-| 5 | `smooth_mesh` | 🔬 proven (`util_mesh_smooth`, normals verified changed) — not yet an MCP tool |
-| 6 | `duplicate_mesh` | 🔬 proven (`util_mesh_duplicate`, exact 2× vert/face count) — not yet an MCP tool |
-| 7 | `merge_mesh_geometry` | 🔬 proven (`util_mesh_merge_geometry`, via duplicate→merge chain) — not yet an MCP tool |
+| 1 | `unwrap_mesh_uvs` | ✅ shipped (Phase 5) |
+| 2 | `decimate_mesh` | ✅ shipped (Phase 5) |
+| 3 | `subdivide_mesh` | ✅ shipped (Phase 5) |
+| 4 | `bevel_mesh` | ✅ shipped (Phase 5) |
+| 5 | `smooth_mesh` | ✅ shipped (Phase 5) |
+| 6 | `duplicate_mesh` | ✅ shipped (Phase 5) |
+| 7 | `merge_mesh_geometry` | ✅ shipped (Phase 5) |
 | 8 | Non-destructive mesh replace/swap | ⬜ inconclusive — two real code paths identified (`script_import_asset` destructive, `script_append_mesh` additive), neither empirically confirmed; needs its own bisection + a real multi-object test fixture |
 | 9 | Targeted 2-object merge (`merge_geometry_down`'s real use case) | ⬜ blocked — needs a new minic accessor for "the other object," bigger patch than a one-liner |
 | 10 | UV validity check (1.0 changelog item) | ⬜ unchecked — minic reachability not yet investigated |
@@ -70,9 +70,10 @@ MeshTriage, and MeshTriage's scope is unaffected by this pivot.
 | 14 | `run_script` | ✅ shipped (v1, Phase 4) — escape hatch, stays useful regardless of new tools |
 | 15 | `list_available_presets` | ✅ shipped (v1, Phase 1/2) |
 
-Items 1-7 are the next implementation phase's natural scope — every one of them is
-already empirically de-risked, unlike the rest of v1's phases, which each needed
-their own hands-on investigation before implementation could start.
+Items 1-7 shipped as Phase 5 (2026-09-16, see docs/PLAN.md and STATUS.md) — every
+one of them was already empirically de-risked going in, unlike the rest of v1's
+phases, which each needed their own hands-on investigation before implementation
+could start. Items 8-10 remain open and are not scoped into any phase yet.
 
 ## Patch policy
 
@@ -91,9 +92,12 @@ unaffected.
   needs touching when the target C function already exists (contrast: a genuinely
   new C function, like `script_timeline_resume`/`_pause`, needs three files).
 - **Current state:** branch `spike/minic-decimate` in the ArmorPaint checkout,
-  unpushed, one file changed, 7 functions attempted, 6 registered and empirically
-  verified, 1 confirmed a real dead end (see roadmap item 9). Incremental rebuild
-  after the full batch: 2.3s.
+  unpushed, one file changed, 7 functions registered and empirically verified.
+  A further function, `util_mesh_merge_geometry_down` (the GUI's targeted
+  "merge with the object below"), was considered and rejected as a one-liner
+  -- it needs a new minic accessor for "the other object" that doesn't exist,
+  not just a registration (see roadmap item 9); it was never actually
+  attempted/registered. Incremental rebuild after the full batch: 2.3s.
 - **Upstream ambition:** Grayson wants to submit this as a PR to
   `armory3d/armorpaint` — his first open-source contribution. The patch is a strong
   candidate for that: small, mechanical, every line empirically proven against real
@@ -104,10 +108,10 @@ unaffected.
   expose headlessly.
 - **Until upstream lands (if it does):** Tool-ArmorPaintMCP's own `AP_BINARY` must
   point at a build carrying this patch, not stock ArmorPaint. This is a new
-  operational dependency the project didn't have before — needs a `--check`
-  preflight update once these tools are actually wired into `server.py`, so a
-  caller pointed at an unpatched binary gets a clear error instead of a silent
-  "function not found" minic failure.
+  operational dependency the project didn't have before — covered by a
+  `--check` preflight "mesh-edit patch" check (see `src/armorpaint_mcp/doctor.py`),
+  shipped alongside Phase 5's tools, so a caller pointed at an unpatched binary
+  gets a clear error instead of a silent "function not found" minic failure.
 
 ## Known gaps / open questions
 

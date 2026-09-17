@@ -4,26 +4,35 @@ An [MCP](https://modelcontextprotocol.io) server that lets an AI assistant
 batch-drive [ArmorPaint](https://armorpaint.org) — re-export existing
 projects at different presets, build small procedural materials
 (checker/solid node graphs built, rendered, and exported in a single pass),
-inspect an existing project's objects, materials, and layers, and run
-arbitrary minic scripts against a project for anything the purpose-built
-tools don't cover — without opening the GUI for each pass. Mesh-detail
-rebaking and swapping texture sets into an existing project are structurally
-unreachable on this ArmorPaint build (no CLI or scripting path exists for
-either) and are permanently out of scope — see [STATUS.md](STATUS.md)'s
-Known Issues for the specifics.
+inspect an existing project's objects, materials, and layers, edit mesh
+geometry and UVs (decimate, bevel, subdivide, smooth, duplicate, merge,
+unwrap) via ArmorPaint's own real mesh-editing algorithms, and run arbitrary
+minic scripts against a project for anything the purpose-built tools don't
+cover — without opening the GUI for each pass. Mesh-detail rebaking and
+swapping texture sets into an existing project are structurally unreachable
+on this ArmorPaint build (no CLI or scripting path exists for either) and
+are permanently out of scope — see [STATUS.md](STATUS.md)'s Known Issues for
+the specifics.
 
-Full design (including why this deliberately does **not** patch ArmorPaint's
+Full design (including why v1 deliberately did **not** patch ArmorPaint's
 source, unlike the reference implementation it started from) is in
 [docs/superpowers/specs/2026-09-15-armorpaint-mcp-design.md](docs/superpowers/specs/2026-09-15-armorpaint-mcp-design.md).
+That stance was later revised narrowly for the 7 mesh/UV tools below — see
+[ROADMAP.md's "Patch policy"](ROADMAP.md#patch-policy) and the design spec's
+Amendment 3 for what changed and, just as importantly, what didn't
+(rebake/texture-swap remain exactly as out-of-scope as before).
 
 ## Status
 
-**Alpha — v1 tool surface complete (Phase 4: `run_script` shipped).** All
-five planned tools (`reexport_project`, `create_procedural_material`,
-`list_available_presets`, `inspect_project`, `run_script`) are implemented,
-tested, and gated. See [docs/PLAN.md](docs/PLAN.md) for the phase plan and
-[STATUS.md](STATUS.md) for the gate ledger. Live/interactive "live mode" is
-deferred, not shipped — see the design spec's "Deferred: live mode" section.
+**Alpha — v1 tool surface + Phase 5 mesh/UV editing tools shipped.** 12
+tools total: v1's five (`reexport_project`, `create_procedural_material`,
+`list_available_presets`, `inspect_project`, `run_script`) plus Phase 5's
+seven mesh/UV editing tools (`decimate_mesh`, `bevel_mesh`, `subdivide_mesh`,
+`smooth_mesh`, `duplicate_mesh`, `merge_mesh_geometry`, `unwrap_mesh_uvs`),
+all implemented, tested, and gated. See [docs/PLAN.md](docs/PLAN.md) for the
+phase plan and [STATUS.md](STATUS.md) for the gate ledger. Live/interactive
+"live mode" is deferred, not shipped — see the design spec's "Deferred: live
+mode" section.
 
 ## Gallery
 
@@ -62,16 +71,27 @@ ceiling, tracked as open scope, not a platform limit.
 
 ## How it works
 
-ArmorPaint ships real, unpatched CLI automation:
+ArmorPaint ships real CLI automation:
 `--background` (headless), `--export-textures/--export-mesh/--export-material`
 (native batch export), `--script <path>` (runs a script against the opened
-project), and `--api` (prints the full scripting API reference). This server
-drives those directly — no source patching, no custom rebuild, runs against
-the stock binary.
+project), and `--api` (prints the full scripting API reference). v1's five
+tools drive those directly against a **stock** ArmorPaint binary — no source
+patching, no custom rebuild.
 
 The escape-hatch tool, `run_script`, hands the caller's own minic source
 straight to `--script` against an already-open project — for the cases the
-four purpose-built tools above don't cover.
+purpose-built tools don't cover.
+
+The 7 mesh/UV editing tools (`decimate_mesh`, `bevel_mesh`, `subdivide_mesh`,
+`smooth_mesh`, `duplicate_mesh`, `merge_mesh_geometry`, `unwrap_mesh_uvs`)
+are different: ArmorPaint 1.0's mesh-editing algorithms are real and working
+but wired to GUI buttons only, not registered in its minic scripting engine.
+These 7 tools require `AP_BINARY` to point at a build carrying a small,
+scoped local patch that registers those existing functions for `--script`
+use (one line per function — see [ROADMAP.md's "Patch policy"](ROADMAP.md#patch-policy)
+for the mechanism and rationale). Run `ap-mcp --check` to confirm your
+`AP_BINARY` carries it; v1's five tools work fine against a stock binary
+regardless.
 
 ## Requirements
 
@@ -87,6 +107,18 @@ four purpose-built tools above don't cover.
     asset/shader export from `make.bat`) next to it or it access-violates on
     launch with zero log output. Copy the exe into `paint\build\out\` and
     run it from there.
+- **Mesh/UV editing tools need a patched build, additionally.** 7 of the 12
+  shipped tools (`decimate_mesh`, `bevel_mesh`, `subdivide_mesh`,
+  `smooth_mesh`, `duplicate_mesh`, `merge_mesh_geometry`, `unwrap_mesh_uvs` --
+  the Phase 5 tools) require `AP_BINARY` to point at a build of the same
+  checkout carrying this project's scoped local minic patch (branch
+  `spike/minic-decimate` -- see [ROADMAP.md's "Patch
+  policy"](ROADMAP.md#patch-policy) for the branch, mechanism, and current
+  state). **That branch is currently unpushed/local-only**, so reproducing
+  the full working setup on a fresh machine means building that branch, not
+  just `main`. `ap-mcp --check` reports a clear "mesh-edit patch" failure if
+  the connected `AP_BINARY` is running stock ArmorPaint -- v1's other five
+  tools work fine against a stock binary regardless.
 
 ## Install
 
@@ -123,7 +155,11 @@ pwsh smoke/smoke.ps1
 ```
 
 Headless proof the project is alive: package imports, `--version` and
-`--help` exit 0, and `reexport_project` is registered as an MCP tool. Each
+`--help` exit 0, and 10 of the 12 shipped tools (`reexport_project`,
+`inspect_project`, `run_script`, and the 7 mesh/UV editing tools) each have
+their own MCP-registration probe -- 13 probes total (3 base + those 10).
+`create_procedural_material` and `list_available_presets` are exercised by
+the unit/integration tests but don't have their own smoke probe yet. Each
 phase adds a probe here.
 
 ```bash
