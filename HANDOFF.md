@@ -1,62 +1,92 @@
 # 🧭 Session Handoff — Tool-ArmorPaintMCP
 
-_Last updated: 2026-09-16, later same day (wrap-up)_
+_Last updated: 2026-09-17 (wrap-up)_
 
 > The baton. Written by `wrap-up` at session end, read by `pickup` at session start.
 
 ## 🎯 Current state
 
-Phase 5 (shipped/merged/pushed, see below) plus one new thing this session:
-**Grayson's first open-source contribution is live** —
-[armory3d/armorpaint#2139](https://github.com/armory3d/armorpaint/pull/2139),
-upstreaming the Phase 5 mesh-edit `minic_api_list.h` patch. Nothing else
-changed in this project's own tool surface; v1 and Phase 5's 12 tools are
-exactly as they were.
+Phase 5 (shipped/merged/pushed) plus upstream PR #2139 (open, awaiting
+review) are unchanged from before. This session was a pure investigation:
+**Known Issue #4 (`smooth_mesh`'s flaky vertex count) is now root-caused**,
+not just documented as flaky. Root cause is a real bug in ArmorPaint's own
+`util_mesh_smooth()` C function (uninitialized heap memory read via an
+accumulate-without-zero-init pattern) — not this project's minic patch, not
+a timing race in project loading. The investigation also surfaced that
+`bevel_mesh` has the identical bug (new Known Issue #5) and that
+`util_mesh_calc_normals(true)`'s shared normal-smoothing path may be
+silently corrupting normals in other patched tools too (flagged, not yet
+verified). No code was written, built, or upstreamed this session — this
+was root-cause-only, by explicit task scope.
 
 ## 📌 Where we stopped
 
-PR #2139 is open, awaiting upstream review. Nothing is mid-flight in this
-repo — the only local change this session was this HANDOFF.md itself.
+STATUS.md's Known Issues #4/#5 and project memory
+(`armorpaint-smooth-mesh-flaky-vertex-count`) both carry the full root
+cause and empirical evidence (10-run repros, source citations by line
+number). Nothing is mid-flight — the fix itself hasn't been started.
 
 ## ▶️ Next concrete step
 
-**Wait for upstream review on #2139.** Nothing to do here until a maintainer
-responds. If it comes back with requested changes, amend the branch at
-`graysonchalmers/armorpaint:expose-util-mesh-uv-unwrap-to-minic` (mirrors
-local `spike/minic-decimate` in `C:\Projects-local\z-Git\ArmorPaint`, commit
-`2b528475`) and force-push — don't re-derive the patch from scratch.
+**Decide whether to write the actual fix** (zero-fill `vsum`/`vbsum`/`vn`/
+`vbn` in `util_mesh_smooth`, `cap_sx..cap_cnt` in `util_mesh_bevel`, and
+`smooth_vals` in `util_mesh_calc_normals`, each right after their
+`f32_array_create`/`i32_array_create` calls, before their `+=`/`++` loops —
+`C:\Projects-local\z-Git\ArmorPaint\paint\sources\util\util_mesh.c`). This
+is a real algorithm patch to ArmorPaint's own C source, not the
+registration-only kind ROADMAP.md's "Patch policy" already covers — needs
+Grayson's explicit go-ahead before anyone writes/builds/upstreams it.
+Upstream PR #2139 is registration-only; an algorithm fix would need to be a
+**separate** PR, not folded into #2139.
 
 Other options, still none urgent:
-- **ROADMAP.md items 8-10** — non-destructive mesh replace (needs its own
-  bisection + a real multi-object fixture), targeted 2-object merge (needs
-  a new minic accessor, bigger patch), UV validity check (reachability
-  unchecked). None scoped into a phase yet.
-- **Two small parked doc/docstring gaps** from the final review (see
-  "Open questions") — trivial whenever `server.py` or the design spec is
-  next open for something else.
+- **Wait for upstream review on #2139** (unrelated to this session's
+  finding). If it comes back with requested changes, amend
+  `graysonchalmers/armorpaint:expose-util-mesh-uv-unwrap-to-minic` (mirrors
+  local `spike/minic-decimate`, commit `2b528475`) and force-push.
+- **ROADMAP.md items 8-10** — non-destructive mesh replace, targeted
+  2-object merge, UV validity check. None scoped into a phase yet.
+- Verify whether `util_mesh_calc_normals(true)`'s `smooth_vals` bug
+  (4 call sites, only 1 is `util_mesh_smooth`) is actually corrupting
+  normals in `decimate_mesh`/`subdivide_mesh`/`duplicate_mesh`/etc. —
+  flagged this session, not empirically checked yet.
 
 ## ❓ Open questions
 
-- Upstream review timeline for #2139 is unknown — no maintainer response yet
-  as of this session.
+- Whether to write/build/upstream the algorithm fix (see "Next concrete
+  step") — Grayson's call, not made this session.
+- Whether the `util_mesh_calc_normals(true)` normals-corruption blast
+  radius extends beyond `smooth_mesh`/`bevel_mesh` to the other 5 patched
+  mesh-edit tools — flagged, unverified.
+- Upstream review timeline for #2139 is unknown — no maintainer response yet.
 - Live mode (deferred, not rejected) — two options named in the spec, neither
   chosen; revisit only once batch mode is solid and live mode is actually
-  wanted. (Carried over, unchanged this session.)
+  wanted. (Carried over, unchanged.)
 - The parked `_failure()` key-set assertion gap (2 of 10 call sites, from the
-  Minor-findings cleanup session) — still open, unrelated to Phase 5. Worth
-  its own tiny task, or picked up opportunistically.
+  Minor-findings cleanup session) — still open, unrelated to Phase 5.
 - Design spec's own Amendment 3 prose still says "6 of 7 functions patched" —
-  ROADMAP.md's copy was corrected during Phase 5's final-review fix wave, the
-  spec's own historical text wasn't (out of that fix's scope). Cosmetic.
+  cosmetic, ROADMAP.md's copy was already corrected.
 - `merge_mesh_geometry`'s docstring has no general "ok=True proves only
-  completion" caveat (only its precondition-guard-specific one) — a real but
-  non-load-bearing gap, one sentence to fix whenever `server.py` is next open.
-- `smooth_mesh`'s flaky vertex count (94 vs 96, once) — needs more data
-  points before it's worth a real investigation; see project memory.
+  completion" caveat (only its precondition-guard-specific one) — trivial
+  fix whenever `server.py` is next open.
 
 ## 🗂️ Changed this session
 
-- **This project:** `HANDOFF.md` only (this update).
+- **This project:** `STATUS.md` (Known Issue #4 rewritten with full root
+  cause + evidence; new Known Issue #5 for `bevel_mesh`), this `HANDOFF.md`.
+  `.env`/`.venv\` created in the worktree (both gitignored) to drive real
+  repro runs against the already-built `AP_BINARY` — no source changes to
+  the ArmorPaint checkout itself.
+- **Decision (+ why):** root-cause-only was the explicit task scope, so no
+  fix/rebuild/upstream happened even though the fix itself is now
+  well-understood — see "Next concrete step" for why that's a bigger,
+  separate decision (real algorithm patch vs. this project's existing
+  registration-only patch policy).
+- Memory: `armorpaint-smooth-mesh-flaky-vertex-count` rewritten with the
+  confirmed root cause, evidence, and blast-radius findings; `MEMORY.md`
+  index line updated to match.
+- Commons log:
+  `_agent-commons\log\2026-09-17-claude-code-armorpaint-smooth-mesh-rootcause.md`.
 - **Sibling repo `C:\Projects-local\z-Git\ArmorPaint`:** rewrote the
   `spike/minic-decimate` patch's comments to drop internal spike/session
   references (upstream reviewers don't need to know our project name),
@@ -129,6 +159,46 @@ Other options, still none urgent:
 ---
 
 ## 🕓 Session log
+
+### 2026-09-17 — root-caused smooth_mesh's flaky vertex count
+- Picked up STATUS.md's open Known Issue #4 (`smooth_mesh` flaky vertex
+  count, first flagged 2026-09-16 during the mesh/UV gallery session) as a
+  dedicated root-cause investigation via `superpowers:systematic-debugging`,
+  in a fresh worktree (`mystifying-banach-e42a6d`).
+- Read ArmorPaint's own C source directly (`util_mesh.c`, `iron_array.c`,
+  `args.c`, `import_arm.c`, `export_obj.c`) rather than guessing from
+  symptoms. Found `util_mesh_smooth()` accumulates into `vsum`/`vbsum`/`vn`/
+  `vbn` via `+=`/`++`, but those arrays are allocated with `f32_array_create`/
+  `i32_array_create`, whose buffer comes from `realloc(NULL, size)` — never
+  zero-filled. Every other array the function allocates is covered by plain
+  assignment before use, so this is the one genuine gap.
+- Called `advisor` before committing to the hypothesis or spending time on a
+  rebuild. It flagged three cheap checks to run before touching the build:
+  confirm no allocator override exists (one grep, confirmed clean), use
+  `bevel_mesh` (same accumulate-without-zero-init pattern spotted at
+  `util_mesh.c:1369-1374`) as a free discriminator against the *current*
+  binary with no rebuild, and switch the repro's pass/fail metric from
+  vertex count (noisy, 3/5 clean) to the near-zero-component scan (0/5 clean
+  originally — the real discriminator).
+- Set up `.env`/`.venv` in the worktree and ran real repros against the
+  already-built `AP_BINARY` (no source changes, no rebuild): `smooth_mesh`
+  10x reconfirmed the original finding (6/10 clean, 4/10 corrupted, up to
+  29/96 near-zero vertices); `bevel_mesh` 10x showed the identical signature
+  on the unmodified binary, confirming the bug isn't specific to
+  `smooth_mesh`'s call site.
+- Traced `--script`'s actual frame scheduling (`args_run_on_next_frame` →
+  `import_arm_run_project` → `sys_notify_on_next_frame(&args_run_script)`)
+  to rule out a project-load timing race: loading completes synchronously a
+  full frame before the script runs. The apparent "timing/process-state
+  dependency" is real but is heap-allocator state at process-launch time
+  (fresh zeroed OS pages vs. recycled dirty heap), not frame timing.
+- Wrote the confirmed root cause into STATUS.md (Known Issue #4 rewritten,
+  new Known Issue #5 for `bevel_mesh`) and project memory. Deliberately did
+  not write, build, or upstream a fix — task scope was root-cause only, and
+  an algorithm patch to ArmorPaint's own C source is a bigger category of
+  change than this project's existing registration-only patch policy.
+- Commons log:
+  `_agent-commons\log\2026-09-17-claude-code-armorpaint-smooth-mesh-rootcause.md`.
 
 ### 2026-09-16 (later same day) — upstream PR to armory3d/armorpaint
 - Picked up right after the Phase 5 wrap-up (see the entry directly below —
