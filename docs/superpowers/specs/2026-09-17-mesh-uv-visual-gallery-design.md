@@ -43,10 +43,14 @@ otherwise do.
 ## Scope
 
 All 7 Phase 5 tools get one before/after wireframe pair each (14 images
-total). Reuses the exact fixtures Phase 5's own tests already use:
+total). Reuses the exact fixture and setup Phase 5's own tests already use:
 `tests/fixtures/sample_project.arm` (ArmorPaint's default `cube_bevel`
-primitive) for 6 tools, `tests/fixtures/sample_project_multi.arm` for
-`merge_mesh_geometry` (needs 2+ objects).
+primitive) for 6 tools directly. `merge_mesh_geometry` needs 2+ objects,
+which no fixture provides — `sample_project_multi.arm` is a
+multi-*material*, single-object fixture (for `inspect_project`'s tests),
+not multi-object. Its own integration test builds the 2-object setup at
+runtime instead (`duplicate_mesh(sample_project.arm) -> duplicated.arm`,
+then merge); the gallery script does the same.
 
 **Out of scope:**
 - No new MCP tool. This is dev/docs tooling only, at the same tier as the
