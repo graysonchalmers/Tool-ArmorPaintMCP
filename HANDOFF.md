@@ -1,6 +1,6 @@
 # 🧭 Session Handoff — Tool-ArmorPaintMCP
 
-_Last updated: 2026-09-17 (pickup — merged the root-cause branch)_
+_Last updated: 2026-09-17 (wrap-up)_
 
 > The baton. Written by `wrap-up` at session end, read by `pickup` at session start.
 
@@ -21,11 +21,12 @@ follow-up investigation (`superpowers:systematic-debugging` in worktree
 `mystifying-banach-e42a6d`) **root-caused it**: ArmorPaint's own C source
 (`util_mesh_smooth`/`util_mesh_bevel`/`util_mesh_calc_normals`)
 accumulates into uninitialized heap memory, never zero-filled. That
-investigation's branch has now been merged into `main` (this session,
-resolving HANDOFF.md/STATUS.md conflicts by hand since the branch had
-forked before the prior session's handoff-log migration). See project
-memory `armorpaint-smooth-mesh-flaky-vertex-count.md` for the full
-writeup before touching any of `smooth_mesh`/`bevel_mesh`/`decimate_mesh`.
+investigation's branch is now merged into `main` (`3913818`, this
+session, resolving HANDOFF.md/STATUS.md conflicts by hand since the
+branch had forked before the prior session's handoff-log migration) and
+pushed — `origin/main` confirmed in sync. See project memory
+`armorpaint-smooth-mesh-flaky-vertex-count.md` for the full writeup
+before touching any of `smooth_mesh`/`bevel_mesh`/`decimate_mesh`.
 
 No fix has been written, built, or upstreamed for the root cause — that's
 explicitly a separate, bigger decision (real algorithm patch to
@@ -34,18 +35,18 @@ policy) that needs Grayson's go-ahead first.
 
 ## 📌 Where we stopped
 
-The root-cause branch (`claude/mystifying-banach-e42a6d`) is merged into
-`main` locally; not yet pushed. Its old pre-handoff-log-migration session
-history was not reproduced verbatim in this file (it predates the
-migration and would have duplicated content) — its one new session entry
-was written to `handoff-log/2026-09-17-smooth-mesh-rootcause.md` instead,
-matching this project's established convention.
+Everything is shipped: merge commit `3913818` on `main`, pushed, working
+tree clean, `origin/main` in sync (`0  0`). Nothing is mid-flight. The
+old branch's pre-handoff-log-migration session history was not reproduced
+verbatim in this file (it predates the migration and would have
+duplicated content) — its one new session entry lives at
+`handoff-log/2026-09-17-smooth-mesh-rootcause.md`, and this session's own
+merge/push narrative is at `handoff-log/2026-09-17-merge-rootcause-branch.md`.
 
 ## ▶️ Next concrete step
 
-**Push `main`** once the merge is verified (smoke/pytest still green —
-only docs changed in the merge, no source). Then decide the two
-still-open items below.
+**Decide whether/when to write the actual C-source fix** — see "Open
+questions" below, explicitly Grayson's call.
 
 Other options, still none urgent:
 - **Wait for upstream review on #2139** — nothing to do until a
@@ -55,11 +56,12 @@ Other options, still none urgent:
   force-push, don't re-derive the patch.
 - **ROADMAP.md items 8-10** — non-destructive mesh replace, targeted
   2-object merge, UV validity check. None scoped into a phase yet.
-- **Delete the leftover worktree folders** at
+- **Clean up the two leftover worktree folders** at
   `.claude\worktrees\mesh-uv-visual-gallery` (git already unregistered it,
   directory itself wouldn't delete, `Device or resource busy`) and
-  `.claude\worktrees\mystifying-banach-e42a6d` (now merged, safe to
-  `git worktree remove` and delete the branch) by hand.
+  `.claude\worktrees\mystifying-banach-e42a6d` (now merged — safe to
+  `git worktree remove` and delete both the local and remote
+  `claude/mystifying-banach-e42a6d` branch) by hand.
 
 ## ❓ Open questions
 
@@ -89,13 +91,14 @@ Other options, still none urgent:
 
 ## 🗂️ Changed this session
 
-- Merged `claude/mystifying-banach-e42a6d` into `main` (`--no-ff`),
-  resolving conflicts in `HANDOFF.md`/`STATUS.md` by hand: kept the
-  branch's full root-cause writeup for Known Issues #4/#5, folded in the
-  prior session's `decimate_mesh` observation as a caveat rather than
-  losing it, and wrote the branch's stranded session-log entry to
-  `handoff-log/2026-09-17-smooth-mesh-rootcause.md` instead of
-  reproducing its pre-migration inline history verbatim.
+- Branch: `main` · Merged `claude/mystifying-banach-e42a6d` (`--no-ff`,
+  `3913818`), resolving conflicts in `HANDOFF.md`/`STATUS.md` by hand:
+  kept the branch's full root-cause writeup for Known Issues #4/#5,
+  folded in the prior session's `decimate_mesh` observation as a caveat
+  rather than losing it, and wrote the branch's stranded session-log
+  entry to `handoff-log/2026-09-17-smooth-mesh-rootcause.md` instead of
+  reproducing its pre-migration inline history verbatim. Pushed to
+  `origin/main`, confirmed in sync.
 - Decision (+ why): did not write/build/upstream the C-source fix — that
   remains explicitly Grayson's call, unchanged from the branch's own
   scoping.
