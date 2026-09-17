@@ -96,13 +96,43 @@ def _run_mesh_edit(project: str, minic_call: str, output_project: str | None,
             output_project = ensure_within_roots(output_project, cfg.allowed_roots)
         except PathNotAllowed as exc:
             return _failure(str(exc), "output_project")
+        # A same-file output_project (directly, or via a directory path that
+        # resolves to the same file) would make shutil.copy2 raise -- observed
+        # as PermissionError [WinError 32] on this machine, though
+        # shutil.copy2 documents SameFileError for the exact-same-path case.
+        # Which exception actually fires can vary, so this is checked
+        # up front rather than caught by type.
+        if os.path.realpath(project) == os.path.realpath(output_project):
+            return _failure(
+                "output_project must not be the same file as project -- use "
+                "in_place=True to edit project itself", "output_project")
         os.makedirs(os.path.dirname(output_project) or ".", exist_ok=True)
-        shutil.copy2(project, output_project)
+        try:
+            shutil.copy2(project, output_project)
+        except OSError as exc:
+            # Any other copy failure (permissions, disk full, etc.) -- convert
+            # to this project's standard failure shape instead of letting it
+            # escape as an opaque, uncaught exception.
+            return _failure(f"failed to copy project to output_project: {exc}",
+                            "output_project")
         target = output_project
 
     script = f"void main() {{\n\t{minic_call}\n\tproject_save(0);\n}}\n"
     result = run_minic_script(cfg.binary, target, script, timeout_s)
     if not result.ok:
+        if not in_place:
+            # A copy was made at `target` above; it's now a stale, unedited
+            # duplicate of the original project (run_minic_script failed
+            # before or during project_save(0)). Leaving it on disk would
+            # look like a normal, valid .arm file to anyone who finds it
+            # later, with no indication it was never actually edited.
+            # Best-effort cleanup: a deletion failure must not mask the
+            # original error. Never touched when in_place=True, since target
+            # there IS the caller's own project.
+            try:
+                os.remove(target)
+            except OSError:
+                pass
         return _failure(result.error, "output_project")
     return {"ok": True, "output_project": target, "error": None}
 
@@ -173,6 +203,11 @@ def subdivide_mesh(project: str, output_project: str | None = None,
     AP_BINARY to be a build carrying the mesh-edit patch (run `ap-mcp
     --check` to confirm). Bounded by AP_ALLOWED_ROOTS when set.
 
+    ok=True proves only that the ArmorPaint process completed and saved --
+    not that the subdivision looks good; inspect the result yourself for
+    anything beyond "did geometry change" (verified by this tool's own test
+    suite via real face-count diffs, not asserted here at runtime).
+
     Returns {"ok": bool, "output_project": str | None, "error": str | None}."""
     return _run_mesh_edit(project, "util_mesh_subdivide();",
                           output_project, in_place, timeout_s)
@@ -191,6 +226,12 @@ def smooth_mesh(project: str, output_project: str | None = None,
     mutate `project` itself instead, in which case output_project must be
     omitted. Requires AP_BINARY to be a build carrying the mesh-edit patch
     (run `ap-mcp --check` to confirm). Bounded by AP_ALLOWED_ROOTS when set.
+
+    ok=True proves only that the ArmorPaint process completed and saved --
+    not that the smoothing looks good; inspect the result yourself for
+    anything beyond "did vertex positions/normals change" (verified by this
+    tool's own test suite via real geometry diffs, not asserted here at
+    runtime).
 
     Returns {"ok": bool, "output_project": str | None, "error": str | None}."""
     return _run_mesh_edit(project, "util_mesh_smooth();",
@@ -211,6 +252,12 @@ def duplicate_mesh(project: str, output_project: str | None = None,
     output_project must be omitted. Requires AP_BINARY to be a build
     carrying the mesh-edit patch (run `ap-mcp --check` to confirm). Bounded
     by AP_ALLOWED_ROOTS when set.
+
+    ok=True proves only that the ArmorPaint process completed and saved --
+    not that the duplication looks good; inspect the result yourself for
+    anything beyond "did the object/vertex/face count double" (verified by
+    this tool's own test suite via real vertex/face counts, not asserted
+    here at runtime).
 
     Returns {"ok": bool, "output_project": str | None, "error": str | None}."""
     return _run_mesh_edit(project, "util_mesh_duplicate();",
@@ -294,6 +341,11 @@ def unwrap_mesh_uvs(project: str, output_project: str | None = None,
     mutate `project` itself instead, in which case output_project must be
     omitted. Requires AP_BINARY to be a build carrying the mesh-edit patch
     (run `ap-mcp --check` to confirm). Bounded by AP_ALLOWED_ROOTS when set.
+
+    ok=True proves only that the ArmorPaint process completed and saved --
+    not that the unwrap looks good (that's a separate claim from the
+    unverified-quality-vs-xatlas caveat above; verified here only via real
+    UV-coordinate diffs showing a change, not asserted here at runtime).
 
     Returns {"ok": bool, "output_project": str | None, "error": str | None}."""
     return _run_mesh_edit(project, "plugin_uv_unwrap_button();",

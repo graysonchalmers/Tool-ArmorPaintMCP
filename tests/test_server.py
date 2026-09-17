@@ -597,6 +597,108 @@ def test_decimate_mesh_is_registered_as_an_mcp_tool():
     assert set(tool.input_schema.get("required", [])) == {"project", "strength"}
 
 
+def test_decimate_mesh_rejects_output_project_same_as_project(tmp_path):
+    """Cross-task finding (final whole-branch review): output_project naming
+    the same file as project (directly, or via a directory path that
+    resolves to it) used to make shutil.copy2 raise uncaught -- observed as
+    PermissionError [WinError 32] on this machine, though shutil.copy2
+    documents SameFileError for the exact-same-path case. Either way, the
+    exception escaped _run_mesh_edit entirely, which the MCP layer surfaces
+    as an opaque UnexpectedToolError instead of this project's established
+    {"ok": False, ...} contract every tool's docstring promises. This must
+    return a clean failure instead of raising -- shares _run_mesh_edit with
+    every other mesh-edit tool, so decimate_mesh alone proves the fix for
+    all of them."""
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg:
+        mock_cfg.return_value.binary = "ArmorPaint.exe"
+        mock_cfg.return_value.allowed_roots = []
+        # No mock on run_minic_script -- if this reaches it (i.e. the guard
+        # didn't catch the same-file case), the test would raise/hang instead
+        # of asserting cleanly, which is itself a signal something's wrong.
+        result = decimate_mesh(project=str(project), strength=0.5,
+                               output_project=str(project))
+
+    assert result["ok"] is False
+    assert result["output_project"] is None
+    assert "same file" in result["error"]
+    assert "in_place=True" in result["error"]
+
+
+def test_decimate_mesh_converts_copy_failure_to_clean_error(tmp_path):
+    """Any OTHER shutil.copy2 failure (permissions, disk full, etc. -- not
+    just the same-file case) must also be converted to this project's
+    standard failure shape rather than escaping uncaught."""
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
+    output_project = tmp_path / "out.arm"
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.shutil.copy2",
+               side_effect=OSError("disk full")):
+        mock_cfg.return_value.binary = "ArmorPaint.exe"
+        mock_cfg.return_value.allowed_roots = []
+        result = decimate_mesh(project=str(project), strength=0.5,
+                               output_project=str(output_project))
+
+    assert result["ok"] is False
+    assert result["output_project"] is None
+    assert "disk full" in result["error"]
+
+
+def test_decimate_mesh_removes_stale_copy_on_script_failure(tmp_path):
+    """Cross-task finding: when run_minic_script fails after the copy was
+    already made at output_project, the stale copy (still containing the
+    ORIGINAL unedited project) used to be left on disk while the tool
+    reported output_project: None -- indistinguishable from a normal, valid
+    .arm file to anyone who found it later. The copy must be cleaned up on
+    failure when in_place=False (never touched when in_place=True, since
+    target there IS the caller's own project)."""
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
+    output_project = tmp_path / "out.arm"
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
+        mock_cfg.return_value.binary = "ArmorPaint.exe"
+        mock_cfg.return_value.allowed_roots = []
+        mock_run.return_value = ScriptResult(
+            ok=False, stdout="", stderr="", error="'--script' exited 1")
+
+        result = decimate_mesh(project=str(project), strength=0.5,
+                               output_project=str(output_project))
+
+    assert result["ok"] is False
+    assert result["output_project"] is None
+    # The real assertion: shutil.copy2 really ran for real (this is not
+    # mocked), so this proves the copy was actually cleaned up, not just
+    # that the mock was never called.
+    assert not output_project.exists()
+
+
+def test_decimate_mesh_in_place_failure_does_not_delete_project(tmp_path):
+    """The in_place=True counterpart: target IS the caller's own project
+    there, so a failure must never delete it -- the timeout/failure error
+    message already tells the caller to "inspect the project directly",
+    which is only correct if the file is still there to inspect."""
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
+        mock_cfg.return_value.binary = "ArmorPaint.exe"
+        mock_cfg.return_value.allowed_roots = []
+        mock_run.return_value = ScriptResult(
+            ok=False, stdout="", stderr="", error="'--script' exited 1")
+
+        result = decimate_mesh(project=str(project), strength=0.5, in_place=True)
+
+    assert result["ok"] is False
+    assert project.exists()
+
+
 def test_bevel_mesh_calls_the_right_minic_function(tmp_path):
     project = tmp_path / "project.arm"
     project.write_bytes(b"fake")

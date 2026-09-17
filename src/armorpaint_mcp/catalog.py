@@ -129,6 +129,14 @@ _MESH_EDIT_PATCH_FUNCTIONS = [
     "plugin_uv_unwrap_button",
 ]
 
+# NOTE: mesh_edit_patch_missing() below does a raw substring match, so a name
+# here that is a prefix of another registered function's name (e.g. a future
+# "util_mesh_merge_geometry_down" alongside "util_mesh_merge_geometry") could
+# false-positive as present either direction. Harmless today -- the only
+# candidate, "util_mesh_merge_geometry_down", exists only as a comment in the
+# patched minic_api_list.h, and a comment never appears in --api output -- but
+# if it's ever actually registered (ROADMAP.md item 9), revisit this check.
+
 
 def mesh_edit_patch_missing(api_text: str) -> list[str]:
     """Which of the mesh-edit minic functions this project's Phase 5 tools
