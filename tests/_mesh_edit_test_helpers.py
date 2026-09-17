@@ -34,3 +34,18 @@ def obj_normal_lines(text: str) -> list[str]:
 
 def obj_uv_lines(text: str) -> list[str]:
     return [line for line in text.splitlines() if line.startswith("vt ")]
+
+
+def near_zero_component_vertices(text: str, eps: float = 1e-4) -> list[str]:
+    """Vertex lines with any near-zero x/y/z component -- the signature of
+    STATUS.md Known Issues #4/#5 (util_mesh_smooth/util_mesh_bevel
+    accumulating into uninitialized heap memory before their zero-fill fix).
+    Real mesh geometry from these fixtures does not legitimately produce
+    this; any hit here means the corruption regressed."""
+    flagged = []
+    for line in text.splitlines():
+        if not line.startswith("v "):
+            continue
+        if any(abs(float(p)) < eps for p in line.split()[1:4]):
+            flagged.append(line)
+    return flagged

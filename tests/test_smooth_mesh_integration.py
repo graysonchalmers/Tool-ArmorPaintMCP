@@ -4,7 +4,7 @@ import pytest
 
 from armorpaint_mcp.server import smooth_mesh
 from tests._mesh_edit_test_helpers import (export_obj, count_obj_vertices_and_faces,
-                                           obj_normal_lines)
+                                           obj_normal_lines, near_zero_component_vertices)
 
 FIXTURE = os.path.join(os.path.dirname(__file__), "fixtures", "sample_project.arm")
 
@@ -34,3 +34,7 @@ def test_smooth_mesh_preserves_topology_but_changes_normals(tmp_path):
 
     assert obj_normal_lines(after_text) != obj_normal_lines(before_text), (
         "smooth should change vertex normals even though topology is unchanged")
+
+    assert near_zero_component_vertices(after_text) == [], (
+        "smoothed positions must not contain uninitialized-heap garbage "
+        "(STATUS.md Known Issue #4)")

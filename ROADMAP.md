@@ -86,6 +86,18 @@ does not reopen source-patching for anything else — rebake/texture-swap remain
 exactly as blocked and out-of-scope as Phase 2 found them; that finding is
 unaffected.
 
+**Exception, 2026-09-17 (Grayson's explicit go-ahead):** one algorithm fix to
+`util_mesh.c` — zero-initializing the accumulator arrays in
+`util_mesh_smooth`/`util_mesh_bevel`/`util_mesh_calc_normals` that were reading
+uninitialized heap memory (STATUS.md Known Issues #4/#5). This is a real change
+to an existing function's body, not a registration — a different category than
+the policy above. It's a one-time, narrowly-scoped exception for a confirmed
+correctness bug already blocking two of the seven shipped mesh/UV tools, not a
+reopening of source-patching generally. Lives on branch
+`fix/mesh-accumulator-zero-init` (commit `e246089d`), separate from and doesn't
+touch the registration patch (`2b528475`), so each remains independently
+upstream-able.
+
 - **Mechanism:** one line per function in `minic_api_list.h`
   (`X0`/`X1`/... macro, matching the C function's real signature) — ArmorPaint's own
   X-macro system in `minic_api.c` auto-generates the calling thunk. No other file

@@ -3,7 +3,8 @@ import os
 import pytest
 
 from armorpaint_mcp.server import bevel_mesh
-from tests._mesh_edit_test_helpers import export_obj, count_obj_vertices_and_faces
+from tests._mesh_edit_test_helpers import (export_obj, count_obj_vertices_and_faces,
+                                           near_zero_component_vertices)
 
 FIXTURE = os.path.join(os.path.dirname(__file__), "fixtures", "sample_project.arm")
 
@@ -19,8 +20,12 @@ def test_bevel_mesh_adds_geometry(tmp_path):
 
     before_v, before_f = count_obj_vertices_and_faces(
         export_obj(FIXTURE, str(tmp_path / "before.obj")))
-    after_v, after_f = count_obj_vertices_and_faces(
-        export_obj(output_project, str(tmp_path / "after.obj")))
+    after_text = export_obj(output_project, str(tmp_path / "after.obj"))
+    after_v, after_f = count_obj_vertices_and_faces(after_text)
 
     assert after_v > before_v, (before_v, after_v)
     assert after_f > before_f, (before_f, after_f)
+
+    assert near_zero_component_vertices(after_text) == [], (
+        "beveled cap vertices must not contain uninitialized-heap garbage "
+        "(STATUS.md Known Issue #5)")
