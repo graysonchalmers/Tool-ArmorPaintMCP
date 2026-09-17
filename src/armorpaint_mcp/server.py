@@ -1,4 +1,5 @@
 import os
+import shutil
 import sys
 
 from mcp.server.mcpserver import MCPServer
@@ -11,7 +12,7 @@ from armorpaint_mcp.catalog import (CatalogError, extract_project_state,
 from armorpaint_mcp.paths import ensure_within_roots, PathNotAllowed
 from armorpaint_mcp.runner import (DEFAULT_TIMEOUT_S, export_textures, list_export_presets,
                                    run_api, run_minic_script, run_procedural_material)
-from armorpaint_mcp.script_gen import generate_script, NodeSpecError
+from armorpaint_mcp.script_gen import _finite_float, generate_script, NodeSpecError
 
 # Startup is lazy: importing this module must NOT validate config, so
 # `ap-mcp --check` / `--version` work even when config is broken (the exact
@@ -50,6 +51,89 @@ def _is_arm_project_file(path: str) -> bool:
     launching ArmorPaint, or a typo'd path would report ok:True against
     that phantom default project's data instead of an error."""
     return os.path.isfile(path) and path.lower().endswith(".arm")
+
+
+def _run_mesh_edit(project: str, minic_call: str, output_project: str | None,
+                   in_place: bool, timeout_s: float) -> dict:
+    """Shared plumbing for every mesh-edit tool: validate `project`, resolve
+    the edit target (a copy at `output_project` by default -- never touching
+    the caller's own file unless `in_place=True`), run `minic_call` followed
+    by project_save(0) against that target, and report the outcome.
+
+    ok=True proves only that the ArmorPaint process completed and
+    project_save(0) ran -- same caveat as run_script and every other minic
+    call in this project (see run_script's docstring). `minic_call` here is
+    always one of this project's own, already-verified function calls
+    (never caller-supplied text), so the practical risk is much narrower
+    than run_script's arbitrary-script case, but the underlying guarantee
+    is identical.
+
+    Returns {"ok": bool, "output_project": str | None, "error": str | None}."""
+    cfg = _ensure_ready()
+
+    try:
+        project = ensure_within_roots(project, cfg.allowed_roots)
+    except PathNotAllowed as exc:
+        return _failure(str(exc), "output_project")
+
+    if not _is_arm_project_file(project):
+        return _failure(f"'{project}' is not an existing .arm project file",
+                        "output_project")
+
+    if in_place:
+        if output_project is not None:
+            return _failure(
+                "output_project must not be set when in_place=True (the "
+                "caller's own project is mutated directly)", "output_project")
+        target = project
+    else:
+        if not output_project:
+            return _failure(
+                "output_project is required unless in_place=True (mutating "
+                "operations default to a copy, never the caller's own file)",
+                "output_project")
+        try:
+            output_project = ensure_within_roots(output_project, cfg.allowed_roots)
+        except PathNotAllowed as exc:
+            return _failure(str(exc), "output_project")
+        os.makedirs(os.path.dirname(output_project) or ".", exist_ok=True)
+        shutil.copy2(project, output_project)
+        target = output_project
+
+    script = f"void main() {{\n\t{minic_call}\n\tproject_save(0);\n}}\n"
+    result = run_minic_script(cfg.binary, target, script, timeout_s)
+    if not result.ok:
+        return _failure(result.error, "output_project")
+    return {"ok": True, "output_project": target, "error": None}
+
+
+def decimate_mesh(project: str, strength: float, output_project: str | None = None,
+                  in_place: bool = False, timeout_s: float = DEFAULT_TIMEOUT_S) -> dict:
+    """Reduce the project's mesh polycount via ArmorPaint's own decimate
+    algorithm (util_mesh_decimate -- a real, working GUI tool as of
+    ArmorPaint 1.0, exposed to --script by this project's scoped local
+    patch; see ROADMAP.md's "Patch policy"). `strength` is 0.0-1.0-ish
+    (ArmorPaint's own GUI default is 0.5); higher removes more geometry.
+    Operates on a copy of `project` by default -- pass in_place=True to
+    mutate `project` itself instead, in which case output_project must be
+    omitted. Requires AP_BINARY to be a build carrying the mesh-edit patch
+    (run `ap-mcp --check` to confirm). Bounded by AP_ALLOWED_ROOTS when set.
+
+    ok=True proves the ArmorPaint process completed and saved -- not that
+    the reduction looks good; inspect the result yourself for anything
+    beyond "did geometry change" (verified by this tool's own test suite via
+    real vertex/face counts, not asserted here at runtime).
+
+    Returns {"ok": bool, "output_project": str | None, "error": str | None}."""
+    try:
+        strength = _finite_float("strength", strength)
+    except NodeSpecError as exc:
+        return _failure(str(exc), "output_project")
+    return _run_mesh_edit(project, f"util_mesh_decimate({strength});",
+                          output_project, in_place, timeout_s)
+
+
+mcp.tool()(decimate_mesh)
 
 
 def reexport_project(project: str, preset: str, output_dir: str) -> dict:

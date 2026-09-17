@@ -7,7 +7,8 @@ from armorpaint_mcp import server
 from armorpaint_mcp.catalog import CatalogError
 from armorpaint_mcp.runner import DEFAULT_TIMEOUT_S, ExportResult, ApiResult, ScriptResult
 from armorpaint_mcp.server import (mcp, reexport_project, create_procedural_material,
-                                   list_available_presets, inspect_project, run_script)
+                                   list_available_presets, inspect_project, run_script,
+                                   decimate_mesh)
 
 
 @pytest.fixture(autouse=True)
@@ -523,3 +524,73 @@ def test_run_script_is_registered_as_an_mcp_tool():
     tool = by_name["run_script"]
     assert set(tool.input_schema["properties"]) == {"project", "script", "timeout_s"}
     assert set(tool.input_schema.get("required", [])) == {"project", "script"}
+
+
+def test_decimate_mesh_requires_output_project_unless_in_place(tmp_path):
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg:
+        mock_cfg.return_value.binary = str(tmp_path / "ArmorPaint.exe")
+        mock_cfg.return_value.allowed_roots = []
+        result = decimate_mesh(project=str(project), strength=0.5)
+
+    assert result["ok"] is False
+    assert "output_project is required" in result["error"]
+
+
+def test_decimate_mesh_rejects_output_project_together_with_in_place(tmp_path):
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg:
+        mock_cfg.return_value.binary = str(tmp_path / "ArmorPaint.exe")
+        mock_cfg.return_value.allowed_roots = []
+        result = decimate_mesh(project=str(project), strength=0.5,
+                               output_project=str(tmp_path / "out.arm"), in_place=True)
+
+    assert result["ok"] is False
+    assert "in_place=True" in result["error"]
+
+
+def test_decimate_mesh_rejects_a_nonexistent_project_path(tmp_path):
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg:
+        mock_cfg.return_value.binary = str(tmp_path / "ArmorPaint.exe")
+        mock_cfg.return_value.allowed_roots = []
+        result = decimate_mesh(project=str(tmp_path / "nope.arm"), strength=0.5,
+                               output_project=str(tmp_path / "out.arm"))
+
+    assert result["ok"] is False
+    assert "not an existing .arm project file" in result["error"]
+    assert result["output_project"] is None
+
+
+def test_decimate_mesh_copies_then_edits_and_saves(tmp_path):
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
+    output_project = tmp_path / "out.arm"
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
+        mock_cfg.return_value.binary = "ArmorPaint.exe"
+        mock_cfg.return_value.allowed_roots = []
+        mock_run.return_value = ScriptResult(ok=True, stdout="", stderr="")
+
+        result = decimate_mesh(project=str(project), strength=0.5,
+                               output_project=str(output_project))
+
+    assert result == {"ok": True, "output_project": str(output_project), "error": None}
+    assert output_project.exists()  # shutil.copy2 actually ran
+    script_arg = mock_run.call_args[0][2]
+    assert "util_mesh_decimate(0.5);" in script_arg
+    assert "project_save(0);" in script_arg
+
+
+def test_decimate_mesh_is_registered_as_an_mcp_tool():
+    tools = asyncio.run(mcp.list_tools())
+    by_name = {t.name: t for t in tools}
+    assert "decimate_mesh" in by_name, sorted(by_name)
+    tool = by_name["decimate_mesh"]
+    assert set(tool.input_schema["properties"]) == {
+        "project", "strength", "output_project", "in_place", "timeout_s"}
+    assert set(tool.input_schema.get("required", [])) == {"project", "strength"}
