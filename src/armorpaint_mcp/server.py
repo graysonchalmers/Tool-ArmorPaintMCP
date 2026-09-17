@@ -220,6 +220,65 @@ def duplicate_mesh(project: str, output_project: str | None = None,
 mcp.tool()(duplicate_mesh)
 
 
+def merge_mesh_geometry(project: str, output_project: str | None = None,
+                        in_place: bool = False, timeout_s: float = DEFAULT_TIMEOUT_S) -> dict:
+    """Merge every object in the project into one, via ArmorPaint's own
+    util_mesh_merge_geometry (exposed to --script by this project's scoped
+    local patch; see ROADMAP.md's "Patch policy").
+
+    IMPORTANT: this merges ALL objects in the project, not a specific pair.
+    ArmorPaint's GUI "merge with the object below" targeting
+    (util_mesh_merge_geometry_down) needs a second minic accessor that does
+    not exist -- see ROADMAP.md item 9. There is no way to merge only two
+    of three-or-more objects with this tool.
+
+    Requires at least 2 objects in the project -- util_mesh_merge_geometry
+    silently no-ops (by its own internal guard) on a project with fewer,
+    confirmed empirically. This tool checks the object count itself first
+    (via inspect_project's same --api machinery) and returns a clear error
+    rather than a false ok=True with zero visible effect.
+
+    Operates on a copy of `project` by default -- pass in_place=True to
+    mutate `project` itself instead, in which case output_project must be
+    omitted. Requires AP_BINARY to be a build carrying the mesh-edit patch
+    (run `ap-mcp --check` to confirm). Bounded by AP_ALLOWED_ROOTS when set.
+
+    Returns {"ok": bool, "output_project": str | None, "error": str | None}."""
+    cfg = _ensure_ready()
+
+    try:
+        checked_project = ensure_within_roots(project, cfg.allowed_roots)
+    except PathNotAllowed as exc:
+        return _failure(str(exc), "output_project")
+
+    if not _is_arm_project_file(checked_project):
+        return _failure(f"'{checked_project}' is not an existing .arm project file",
+                        "output_project")
+
+    api_result = run_api(cfg.binary, checked_project)
+    if not api_result.ok:
+        return _failure(api_result.error, "output_project")
+
+    try:
+        objects = scene_objects(api_result.text)
+    except CatalogError as exc:
+        return _failure(str(exc), "output_project")
+
+    if len(objects) < 2:
+        return _failure(
+            f"project has only {len(objects)} object(s); merge_mesh_geometry "
+            f"needs at least 2 (util_mesh_merge_geometry collapses ALL objects "
+            f"in the project into one and silently does nothing with fewer -- "
+            f"see this tool's docstring for why a specific-pair merge isn't "
+            f"possible)", "output_project")
+
+    return _run_mesh_edit(project, "util_mesh_merge_geometry();",
+                          output_project, in_place, timeout_s)
+
+
+mcp.tool()(merge_mesh_geometry)
+
+
 def reexport_project(project: str, preset: str, output_dir: str) -> dict:
     """Re-export an existing .arm project's textures at a given preset,
     using ArmorPaint's native --export-textures flag (PNG). No resolution

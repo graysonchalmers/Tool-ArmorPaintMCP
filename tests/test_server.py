@@ -9,7 +9,7 @@ from armorpaint_mcp.runner import DEFAULT_TIMEOUT_S, ExportResult, ApiResult, Sc
 from armorpaint_mcp.server import (mcp, reexport_project, create_procedural_material,
                                    list_available_presets, inspect_project, run_script,
                                    decimate_mesh, bevel_mesh, subdivide_mesh, smooth_mesh,
-                                   duplicate_mesh)
+                                   duplicate_mesh, merge_mesh_geometry)
 
 
 @pytest.fixture(autouse=True)
@@ -690,3 +690,53 @@ def test_duplicate_mesh_is_registered_as_an_mcp_tool():
     tools = asyncio.run(mcp.list_tools())
     by_name = {t.name: t for t in tools}
     assert "duplicate_mesh" in by_name, sorted(by_name)
+
+
+def test_merge_mesh_geometry_rejects_fewer_than_two_objects(tmp_path):
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
+
+    api_text = (
+        "/* Current project state:\n{}\n\nScene objects in world space:\n"
+        '"Tessellated": location (0.0, 0.0, 0.0), size (1.0, 1.0, 1.0)\n')
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_api") as mock_api:
+        mock_cfg.return_value.binary = "ArmorPaint.exe"
+        mock_cfg.return_value.allowed_roots = []
+        mock_api.return_value = ApiResult(ok=True, text=api_text)
+
+        result = merge_mesh_geometry(project=str(project), output_project=str(tmp_path / "out.arm"))
+
+    assert result["ok"] is False
+    assert "only 1 object" in result["error"]
+
+
+def test_merge_mesh_geometry_calls_the_right_minic_function_when_enough_objects(tmp_path):
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"fake")
+    output_project = tmp_path / "out.arm"
+
+    api_text = (
+        "/* Current project state:\n{}\n\nScene objects in world space:\n"
+        '"A": location (0.0, 0.0, 0.0), size (1.0, 1.0, 1.0)\n'
+        '"B": location (1.0, 0.0, 0.0), size (1.0, 1.0, 1.0)\n')
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_api") as mock_api, \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
+        mock_cfg.return_value.binary = "ArmorPaint.exe"
+        mock_cfg.return_value.allowed_roots = []
+        mock_api.return_value = ApiResult(ok=True, text=api_text)
+        mock_run.return_value = ScriptResult(ok=True, stdout="", stderr="")
+
+        result = merge_mesh_geometry(project=str(project), output_project=str(output_project))
+
+    assert result["ok"] is True
+    assert "util_mesh_merge_geometry();" in mock_run.call_args[0][2]
+
+
+def test_merge_mesh_geometry_is_registered_as_an_mcp_tool():
+    tools = asyncio.run(mcp.list_tools())
+    by_name = {t.name: t for t in tools}
+    assert "merge_mesh_geometry" in by_name, sorted(by_name)
