@@ -279,6 +279,30 @@ def merge_mesh_geometry(project: str, output_project: str | None = None,
 mcp.tool()(merge_mesh_geometry)
 
 
+def unwrap_mesh_uvs(project: str, output_project: str | None = None,
+                    in_place: bool = False, timeout_s: float = DEFAULT_TIMEOUT_S) -> dict:
+    """Re-unwrap the project's mesh UVs via ArmorPaint's own real, built-in
+    unwrap algorithm (plugin_uv_unwrap_button -- calls proc_uv_unwrap()
+    directly, NOT a loaded plugin despite the C function's name; exposed to
+    --script by this project's scoped local patch; see ROADMAP.md's "Patch
+    policy"). Confirmed empirically to genuinely change UV coordinates
+    (unlike a no-op), unwrap quality/atlas-efficiency vs. xatlas
+    (Tool-MeshTriage's unwrapper) has not been compared -- see ROADMAP.md's
+    "Known gaps" before relying on this for production-quality UVs.
+
+    Operates on a copy of `project` by default -- pass in_place=True to
+    mutate `project` itself instead, in which case output_project must be
+    omitted. Requires AP_BINARY to be a build carrying the mesh-edit patch
+    (run `ap-mcp --check` to confirm). Bounded by AP_ALLOWED_ROOTS when set.
+
+    Returns {"ok": bool, "output_project": str | None, "error": str | None}."""
+    return _run_mesh_edit(project, "plugin_uv_unwrap_button();",
+                          output_project, in_place, timeout_s)
+
+
+mcp.tool()(unwrap_mesh_uvs)
+
+
 def reexport_project(project: str, preset: str, output_dir: str) -> dict:
     """Re-export an existing .arm project's textures at a given preset,
     using ArmorPaint's native --export-textures flag (PNG). No resolution
