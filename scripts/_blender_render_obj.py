@@ -56,11 +56,14 @@ def _mark_all_edges_freestyle(mesh_obj) -> None:
     test: internal grid lines were invisible before this, visible after."""
     bpy.context.view_layer.objects.active = mesh_obj
     bpy.ops.object.mode_set(mode="EDIT")
-    bpy.ops.mesh.select_all(action="SELECT")
-    bpy.ops.mesh.mark_freestyle_edge(clear=False)
-    bpy.ops.object.mode_set(mode="OBJECT")
+    try:
+        bpy.ops.mesh.select_all(action="SELECT")
+        bpy.ops.mesh.mark_freestyle_edge(clear=False)
+    finally:
+        bpy.ops.object.mode_set(mode="OBJECT")
 
-    lineset = bpy.context.view_layer.freestyle_settings.linesets["LineSet"]
+    linesets = bpy.context.view_layer.freestyle_settings.linesets
+    lineset = linesets.get("LineSet") or linesets.new("LineSet")
     lineset.select_edge_mark = True
 
 
