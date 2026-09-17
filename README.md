@@ -95,6 +95,8 @@ regenerates all 14 images through the real shipped tools.
 |:--:|:--:|
 | ![smooth_mesh before](docs/images/gallery/mesh_edit/smooth_mesh_before.png) | ![smooth_mesh after](docs/images/gallery/mesh_edit/smooth_mesh_after.png) |
 
+*`smooth_mesh` genuinely preserves position here (normals change, not the wireframe) — but be aware this tool is flaky: repeated calls against the identical fixture returned varying vertex counts and, on several runs, degenerate near-zero vertex positions, not just the "changed normals" its own docstring claims. This pair is a verified-clean sample, not proof the tool is reliable — see [STATUS.md](STATUS.md) Known Issue #4.*
+
 | `duplicate_mesh` — before | `duplicate_mesh` — after |
 |:--:|:--:|
 | ![duplicate_mesh before](docs/images/gallery/mesh_edit/duplicate_mesh_before.png) | ![duplicate_mesh after](docs/images/gallery/mesh_edit/duplicate_mesh_after.png) |
