@@ -26,6 +26,10 @@ IOU_MIN = 0.95
 RETENTION_MIN = 0.85
 RETENTION_WARN = 0.98
 RETENTION_TOL = 0.05      # fraction of the old bbox diagonal
+# replace_mesh warn-only band on compare_layouts' size_ratio: below half or
+# over double the old object's bounding size. Not a pass/fail gate -- S2/S3
+# showed a Blender FBX round trip landing at ratio 100 (unit-scale mismatch).
+SIZE_RATIO_WARN = (0.5, 2.0)
 
 
 # ----------------------------------------------------------------------- OBJ

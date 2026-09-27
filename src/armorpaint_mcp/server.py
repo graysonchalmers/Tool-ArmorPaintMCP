@@ -655,7 +655,8 @@ def _replace_uv_gate(before_text: str, after_text: str, old_object: str, mode: s
     cmp = uv_analysis.compare_layouts(before_obj, old_g, after_obj, new_g)
     gate = {"iou": cmp["iou"], "retention": cmp["retention"], "warnings": list(check["warnings"])}
     ratio = cmp["size_ratio"]
-    if ratio and not 0.5 <= ratio <= 2.0:
+    ratio_lo, ratio_hi = uv_analysis.SIZE_RATIO_WARN
+    if ratio and not ratio_lo <= ratio <= ratio_hi:
         gate["warnings"].append(
             f"the new mesh is {ratio:.3g}x the old one's size (a Blender FBX lands at "
             f"100x: check the export's unit scale)")
