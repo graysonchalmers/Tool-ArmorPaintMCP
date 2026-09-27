@@ -6,6 +6,7 @@ import uuid
 from mcp.server.mcpserver import MCPServer
 
 from armorpaint_mcp import __version__, uv_analysis
+from armorpaint_mcp import replace as rp
 from armorpaint_mcp.config import load_config, require_valid
 from armorpaint_mcp.doctor import run_check
 from armorpaint_mcp.catalog import (CatalogError, extract_project_state,
@@ -617,6 +618,170 @@ def check_mesh_uvs(project: str, allow_udim: bool = False,
 
 
 mcp.tool()(check_mesh_uvs)
+
+
+def _project_state(cfg, project: str, timeout_s: float) -> tuple[dict | None, str | None]:
+    """(--api project-state JSON, None) or (None, error)."""
+    result = run_api(cfg.binary, project, timeout_s)
+    if not result.ok:
+        return None, result.error
+    try:
+        return extract_project_state(result.text), None
+    except CatalogError as exc:
+        return None, str(exc)
+
+
+_REPLACE_FIELDS = ("output_project", "iou", "retention", "warnings")
+
+
+def _replace_failure(error: str) -> dict:
+    return _failure(error, *_REPLACE_FIELDS)
+
+
+def replace_mesh(project: str, old_object: str, new_mesh: str, mode: str = "round_trip",
+                 allow_udim: bool = False, output_project: str | None = None,
+                 in_place: bool = False, timeout_s: float = DEFAULT_TIMEOUT_S) -> dict:
+    """Replace one object's mesh with `new_mesh` (obj, fbx, glb, gltf, or
+    blend -- the last needs ArmorPaint's own Blender path configured),
+    keeping every layer, every other object, and the replaced object's name,
+    transform, parent, children and material. ArmorPaint's own mesh import
+    would clear every layer instead.
+
+    Paint lives in UV space, so it carries over unchanged only if the new
+    mesh keeps the old UV layout. mode="round_trip" (default) is for the same
+    asset re-exported with edited geometry and UVs kept: it fails unless the
+    UV layouts match (UV-coverage IoU >= 0.95 and >= 85% of painted texels
+    landing where they were in 3D; warning below 98%). mode="swap" is for a
+    different mesh: paint is expected to scramble, and the numbers are
+    reported but not enforced. Either way the new mesh must have valid UVs.
+
+    Writes to `output_project` by default (the caller's `project` is never
+    modified); in_place=True replaces `project` itself, only after the
+    result verifies. Warnings (not failures): a new mesh more than 2x off
+    the old one's size (a Blender FBX lands at 100x), UV warnings from
+    check_mesh_uvs, and -- on multi-object projects -- that ArmorPaint's
+    Reimport Mesh would now reload only `new_mesh` and drop the other
+    objects. Bounded by AP_ALLOWED_ROOTS when set.
+
+    Returns {"ok": bool, "output_project": str | None, "iou": float | None,
+    "retention": float | None, "warnings": [str] | None, "error": str | None}."""
+    if mode not in ("round_trip", "swap"):
+        return _replace_failure(f"mode must be 'round_trip' or 'swap', got {mode!r}")
+    cfg = _ensure_ready()
+    resolved = _resolve_edit_target(project, output_project, in_place, cfg)
+    if isinstance(resolved, dict):
+        return _replace_failure(resolved["error"])
+    project, target = resolved
+    try:
+        new_mesh = ensure_within_roots(new_mesh, cfg.allowed_roots)
+    except PathNotAllowed as exc:
+        return _replace_failure(str(exc))
+    if not os.path.isfile(new_mesh):
+        return _replace_failure(f"new_mesh '{new_mesh}' does not exist")
+    try:
+        rp.precheck_replacement(new_mesh, allow_udim)
+    except rp.ReplaceError as exc:
+        return _replace_failure(str(exc))
+
+    before, error = _project_state(cfg, project, timeout_s)
+    if error is not None:
+        return _replace_failure(error)
+    fresh = _fresh_sibling(target)
+    try:
+        names_before = rp.object_names(before)
+        duplicates = names_before.count(old_object)
+        if duplicates > 1:
+            raise rp.ReplaceError(
+                f"'{old_object}' matches {duplicates} objects in the project "
+                f"(names: {', '.join(names_before)}); rename the duplicates so "
+                f"the replace can target one unambiguously")
+        material = rp.material_override_name(before, old_object)  # also checks it exists
+        script = rp.build_replace_script(old_object, new_mesh, fresh, material)
+    except (rp.ReplaceError, NodeSpecError, KeyError, IndexError, TypeError) as exc:
+        if isinstance(exc, (KeyError, IndexError, TypeError)):
+            return _replace_failure(f"unexpected project state: {exc}")
+        return _replace_failure(str(exc))
+
+    warnings: list[str] = []
+    try:
+        with tempfile.TemporaryDirectory(prefix="ap-mcp-") as tmp:
+            before_text, error = _export_obj(cfg, project, os.path.join(tmp, "before.obj"), timeout_s)
+            if error is not None:
+                return _replace_failure(error)
+            result = _run_saving_script(cfg, project, script, fresh, timeout_s)
+            marker = rp.marker_error(result.stdout)
+            if marker is not None:
+                detail = (result.stderr or "").strip()
+                return _replace_failure(f"replace aborted: {marker}" + (f" ({detail})" if detail else ""))
+            if not result.ok:
+                return _replace_failure(result.error)
+            after, error = _project_state(cfg, fresh, timeout_s)
+            if error is not None:
+                return _replace_failure(error)
+            after_text, error = _export_obj(cfg, fresh, os.path.join(tmp, "after.obj"), timeout_s)
+            if error is not None:
+                return _replace_failure(error)
+
+        problem = _verify_replace_structure(before, after, names_before, old_object,
+                                            before_text, after_text, new_mesh)
+        if problem is not None:
+            return _replace_failure(f"replace did not verify: {problem}")
+        # UV gate (Task 9)
+        os.replace(fresh, target)
+    except (OSError, KeyError, IndexError, TypeError) as exc:
+        if isinstance(exc, OSError):
+            return _replace_failure(f"could not write output_project: {exc}")
+        return _replace_failure(f"unexpected project state: {exc}")
+    finally:
+        _remove_quietly(fresh)
+    return {"ok": True, "output_project": target, "iou": None, "retention": None,
+            "warnings": warnings, "error": None}
+
+
+def _verify_replace_structure(before: dict, after: dict, names_before: list[str],
+                              old_object: str, before_text: str, after_text: str,
+                              new_mesh: str) -> str | None:
+    """Everything that must hold after a replace, or a description of the
+    first thing that doesn't (docs/PLAN.md 6.3 post-verify)."""
+    names_after = rp.object_names(after)
+    if rp.REPLACED_PLACEHOLDER in names_after:
+        return "the old object is still present (hidden, not removed -- multi-stage project?)"
+    if sorted(names_after) != sorted(names_before):
+        return f"objects changed from {sorted(names_before)} to {sorted(names_after)}"
+    if len(after.get("layer_datas") or []) != len(before.get("layer_datas") or []):
+        return "the layer count changed"
+    for name in names_before:
+        if rp.parent_name(after, name) != rp.parent_name(before, name):
+            return f"'{name}' changed parent"
+        old_t, new_t = rp.local_transform(before, name), rp.local_transform(after, name)
+        if any(abs(a - b) > 1e-4 for a, b in zip(old_t, new_t)):
+            return f"'{name}' changed transform"
+    if rp.material_override_name(after, old_object) != rp.material_override_name(before, old_object):
+        return f"'{old_object}' lost its material"
+    before_obj = uv_analysis.parse_obj(before_text)
+    after_obj = uv_analysis.parse_obj(after_text)
+    before_groups = uv_analysis.groups_by_name(before_obj)
+    after_groups = uv_analysis.groups_by_name(after_obj)
+    for name in names_before:
+        if name == old_object:
+            continue
+        if (uv_analysis.group_signature(before_obj, before_groups[name])
+                != uv_analysis.group_signature(after_obj, after_groups[name])):
+            return f"untouched object '{name}' changed geometry"
+    replaced = after_groups.get(old_object)
+    if replaced is None or not replaced.tri_v:
+        return f"'{old_object}' has no geometry after the replace"
+    if new_mesh.lower().endswith(".obj"):
+        with open(new_mesh, encoding="utf-8", errors="replace") as fh:
+            source = uv_analysis.parse_obj(fh.read())
+        expected = sum(len(g.tri_v) for g in source.groups)
+        if len(replaced.tri_v) != expected:
+            return (f"'{old_object}' has {len(replaced.tri_v)} triangles, but the "
+                    f"replacement has {expected}")
+    return None
+
+
+mcp.tool()(replace_mesh)
 
 
 def run_script(project: str, script: str, timeout_s: float = DEFAULT_TIMEOUT_S) -> dict:

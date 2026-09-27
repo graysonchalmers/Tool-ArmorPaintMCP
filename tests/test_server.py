@@ -12,7 +12,7 @@ from armorpaint_mcp.server import (mcp, reexport_project, create_procedural_mate
                                    list_available_presets, inspect_project, run_script,
                                    decimate_mesh, bevel_mesh, subdivide_mesh, smooth_mesh,
                                    duplicate_mesh, merge_mesh_geometry, unwrap_mesh_uvs,
-                                   check_mesh_uvs)
+                                   check_mesh_uvs, replace_mesh)
 
 
 @pytest.fixture(autouse=True)
@@ -1016,3 +1016,158 @@ def test_check_mesh_uvs_is_registered_as_an_mcp_tool():
     tool = by_name["check_mesh_uvs"]
     assert set(tool.input_schema["properties"]) == {"project", "allow_udim", "timeout_s"}
     assert set(tool.input_schema.get("required", [])) == {"project"}
+
+
+STATE_BEFORE = {"mesh_datas": [{"name": "Tessellated"}, {"name": "Cone"}],
+                "mesh_transforms": [[1.0] * 16, [2.0] * 16], "mesh_parents[i32]": [-1, -1],
+                "mesh_materials[i32]": [-1, -1], "material_nodes": [{"name": "Material"}],
+                "layer_datas": [{"name": "Layer"}]}
+
+
+def test_replace_mesh_rejects_an_unknown_mode(tmp_path):
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg:
+        _cfg(mock_cfg)
+        result = replace_mesh(str(tmp_path / "p.arm"), "Cone", str(tmp_path / "g.obj"),
+                              mode="merge", output_project=str(tmp_path / "o.arm"))
+    assert result["ok"] is False and "mode" in result["error"]
+    assert set(result) == {"ok", "output_project", "iou", "retention", "warnings", "error"}
+
+
+def test_replace_mesh_rejects_a_missing_old_object_before_launching_the_script(tmp_path):
+    project = tmp_path / "p.arm"
+    project.write_bytes(b"x")
+    mesh = tmp_path / "g.obj"
+    mesh.write_text("o G\nv 0 0 0\nv 1 0 0\nv 1 1 0\nvt 0 0\nvt 1 0\nvt 1 1\nf 1/1 2/2 3/3\n")
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server._project_state", return_value=(STATE_BEFORE, None)), \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
+        _cfg(mock_cfg)
+        result = replace_mesh(str(project), "Nope", str(mesh), mode="swap",
+                              output_project=str(tmp_path / "o.arm"))
+    assert result["ok"] is False and "Nope" in result["error"]
+    mock_run.assert_not_called()
+
+
+def test_replace_mesh_rejects_an_old_object_name_minic_cannot_carry(tmp_path):
+    """Review Focus 2."""
+    project = tmp_path / "p.arm"
+    project.write_bytes(b"x")
+    mesh = tmp_path / "g.glb"
+    mesh.write_bytes(b"glb")
+    state = dict(STATE_BEFORE, mesh_datas=[{"name": "Tessellated"}, {"name": 'Co"ne'}])
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server._project_state", return_value=(state, None)), \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
+        _cfg(mock_cfg)
+        result = replace_mesh(str(project), 'Co"ne', str(mesh), mode="swap",
+                              output_project=str(tmp_path / "o.arm"))
+    assert result["ok"] is False and "double quote" in result["error"]
+    mock_run.assert_not_called()
+
+
+def test_replace_mesh_turns_a_marker_into_a_readable_error_and_leaves_nothing(tmp_path):
+    project = tmp_path / "p.arm"
+    project.write_bytes(b"x")
+    mesh = tmp_path / "g.blend"
+    mesh.write_bytes(b"blend")
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server._project_state", return_value=(STATE_BEFORE, None)), \
+         patch("armorpaint_mcp.server._export_obj", return_value=("o Cone\n", None)), \
+         patch("armorpaint_mcp.server.run_minic_script",
+               return_value=ScriptResult(ok=True, stdout="REPLACE_ERR append_failed\n",
+                                         stderr="Blender executable path not set\n")):
+        _cfg(mock_cfg)
+        result = replace_mesh(str(project), "Cone", str(mesh), mode="swap",
+                              output_project=str(tmp_path / "o.arm"))
+    assert result["ok"] is False
+    assert "append_failed" in result["error"] and "Blender executable path not set" in result["error"]
+    assert sorted(os.listdir(tmp_path)) == ["g.blend", "p.arm"]
+
+
+def test_replace_mesh_rejects_a_duplicate_old_object_name_before_launching_the_script(tmp_path):
+    """Controller ruling 1: two objects named the same as old_object must
+    fail closed before the replace script ever runs -- minic's
+    script_get_object and this module's own by-name lookups could otherwise
+    pick different objects and silently mis-restore state."""
+    project = tmp_path / "p.arm"
+    project.write_bytes(b"x")
+    mesh = tmp_path / "g.obj"
+    mesh.write_text("o G\nv 0 0 0\nv 1 0 0\nv 1 1 0\nvt 0 0\nvt 1 0\nvt 1 1\nf 1/1 2/2 3/3\n")
+    state = dict(STATE_BEFORE, mesh_datas=[{"name": "Cone"}, {"name": "Cone"}])
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server._project_state", return_value=(state, None)), \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
+        _cfg(mock_cfg)
+        result = replace_mesh(str(project), "Cone", str(mesh), mode="swap",
+                              output_project=str(tmp_path / "o.arm"))
+    assert result["ok"] is False
+    assert "Cone" in result["error"] and "2" in result["error"]
+    mock_run.assert_not_called()
+
+
+def test_replace_mesh_never_raises_on_malformed_state_in_the_pre_run_block(tmp_path):
+    """Controller ruling 2: a malformed --api state must return a clean
+    _replace_failure, never an uncaught KeyError/IndexError/TypeError, out of
+    the pre-run rp.* lookups."""
+    project = tmp_path / "p.arm"
+    project.write_bytes(b"x")
+    mesh = tmp_path / "g.obj"
+    mesh.write_text("o G\nv 0 0 0\nv 1 0 0\nv 1 1 0\nvt 0 0\nvt 1 0\nvt 1 1\nf 1/1 2/2 3/3\n")
+    # "Cone" (index 1) has a material index (5) out of range for
+    # material_nodes (length 1) -- material_override_name's nodes[idx]
+    # lookup raises IndexError on state this malformed.
+    state = dict(STATE_BEFORE, **{"mesh_materials[i32]": [-1, 5]})
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server._project_state", return_value=(state, None)), \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
+        _cfg(mock_cfg)
+        result = replace_mesh(str(project), "Cone", str(mesh), mode="swap",
+                              output_project=str(tmp_path / "o.arm"))
+    assert result["ok"] is False
+    assert "unexpected project state" in result["error"]
+    mock_run.assert_not_called()
+
+
+def test_replace_mesh_never_raises_on_malformed_state_in_the_post_verify_block(tmp_path):
+    """Controller ruling 2: same guarantee for the post-verify rp.* lookups
+    against the AFTER state, and the fresh temp file is still cleaned up."""
+    project = tmp_path / "p.arm"
+    project.write_bytes(b"x")
+    mesh = tmp_path / "g.obj"
+    mesh.write_text("o G\nv 0 0 0\nv 1 0 0\nv 1 1 0\nvt 0 0\nvt 1 0\nvt 1 1\nf 1/1 2/2 3/3\n")
+    # After state has only ONE mesh_transform for two objects -- local_transform's
+    # state["mesh_transforms"][_index(...)] raises IndexError for the second name.
+    after_state = dict(STATE_BEFORE, mesh_transforms=[[1.0] * 16])
+
+    def _fake_run(binary, project_path, script, timeout_s):
+        # The script's project_save() writes the fresh sibling for real so
+        # _run_saving_script's own file-existence check passes.
+        for line in script.splitlines():
+            if "project_filepath_set(" in line:
+                fresh_path = line.split('"')[1]
+                with open(fresh_path, "wb") as fh:
+                    fh.write(b"fresh")
+                break
+        return ScriptResult(ok=True, stdout="", stderr="")
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server._project_state",
+               side_effect=[(STATE_BEFORE, None), (after_state, None)]), \
+         patch("armorpaint_mcp.server._export_obj", return_value=("o Cone\no Tessellated\n", None)), \
+         patch("armorpaint_mcp.server.run_minic_script", side_effect=_fake_run):
+        _cfg(mock_cfg)
+        result = replace_mesh(str(project), "Cone", str(mesh), mode="swap",
+                              output_project=str(tmp_path / "o.arm"))
+    assert result["ok"] is False
+    assert "unexpected project state" in result["error"]
+    # No leftover .tmp.arm fresh sibling, and output_project was never written.
+    assert sorted(os.listdir(tmp_path)) == ["g.obj", "p.arm"]
+
+
+def test_replace_mesh_is_registered_as_an_mcp_tool():
+    by_name = {t.name: t for t in asyncio.run(mcp.list_tools())}
+    tool = by_name["replace_mesh"]
+    assert set(tool.input_schema["properties"]) == {
+        "project", "old_object", "new_mesh", "mode", "allow_udim",
+        "output_project", "in_place", "timeout_s"}
+    assert set(tool.input_schema.get("required", [])) == {"project", "old_object", "new_mesh"}
