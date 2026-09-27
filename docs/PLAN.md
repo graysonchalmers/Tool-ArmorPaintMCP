@@ -193,7 +193,7 @@ relationship each tool's integration test proved.
   text/style description) — the harder generative problem the reference
   project also attempts; explicitly out of v1 scope.
 
-## Phase 6 (APPROVED 2026-09-27) — rename hardening, UV check, mesh replace
+## Phase 6 (APPROVED 2026-09-27, ✅ GATE GREEN 2026-09-27) — rename hardening, UV check, mesh replace
 
 > **Approved by Grayson 2026-09-27**, as written in "Decisions applied"
 > below. Spikes S1-S5 run before any 6.2/6.3 tool code. Decisions recorded

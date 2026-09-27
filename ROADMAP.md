@@ -61,9 +61,9 @@ MeshTriage, and MeshTriage's scope is unaffected by this pivot.
 | 5 | `smooth_mesh` | ✅ shipped (Phase 5) |
 | 6 | `duplicate_mesh` | ✅ shipped (Phase 5) |
 | 7 | `merge_mesh_geometry` | ✅ shipped (Phase 5) |
-| 8 | Non-destructive mesh replace/swap | ⬜ approved 2026-09-27 (Phase 6.3) — composes with no patch as `script_append_mesh` + `script_object_remove` (`c0df922d`). D4 answered 2026-09-27: `round_trip`/`swap` modes, UV-IoU gate, all formats, verify-then-commit, name/transform/material carried over |
+| 8 | Non-destructive mesh replace/swap | ✅ shipped (Phase 6) — `replace_mesh`, composes with no patch as `script_append_mesh` + `script_object_remove` (`c0df922d`). D4 answered 2026-09-27: `round_trip`/`swap` modes, UV-IoU gate, all formats, verify-then-commit, name/transform/material carried over |
 | 9 | Targeted 2-object merge (`merge_geometry_down`'s real use case) | ⬜ decided, not approved (Phase 7) — D2 answered 2026-09-27: upstream-first `script_object_merge(object_t*, object_t*)` wrapper in the maintainer's `c0df922d` shape; no `->ext` spike |
-| 10 | UV validity check (1.0 changelog item) | ⬜ approved 2026-09-27 (Phase 6.2) — upstream's check (`b62fd323`) isn't script-reachable; read-only Python check over `script_export_mesh`, tiered errors/warnings, `allow_udim` escape hatch, no patch |
+| 10 | UV validity check (1.0 changelog item) | ✅ shipped (Phase 6) — `check_mesh_uvs`; upstream's check (`b62fd323`) isn't script-reachable; read-only Python check over `script_export_mesh`, tiered errors/warnings, `allow_udim` escape hatch, no patch |
 | 11 | `inspect_project` | ✅ shipped (v1, Phase 3) |
 | 12 | `reexport_project` | ✅ shipped (v1, Phase 1) |
 | 13 | `create_procedural_material` | ✅ shipped (v1, Phase 2) — covers the materials/blockout secondary want |

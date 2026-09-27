@@ -60,6 +60,10 @@ Probe "duplicate_mesh registered as an MCP tool" { & $Python -c "import asyncio;
 Probe "merge_mesh_geometry registered as an MCP tool" { & $Python -c "import asyncio; from armorpaint_mcp.server import mcp; names = [t.name for t in asyncio.run(mcp.list_tools())]; assert 'merge_mesh_geometry' in names, names; print(names)" }
 Probe "unwrap_mesh_uvs registered as an MCP tool" { & $Python -c "import asyncio; from armorpaint_mcp.server import mcp; names = [t.name for t in asyncio.run(mcp.list_tools())]; assert 'unwrap_mesh_uvs' in names, names; print(names)" }
 
+# Phase 6: UV check + mesh replace, registered on the MCP server object.
+Probe "check_mesh_uvs registered as an MCP tool" { & $Python -c "import asyncio; from armorpaint_mcp.server import mcp; names = [t.name for t in asyncio.run(mcp.list_tools())]; assert 'check_mesh_uvs' in names, names; print(names)" }
+Probe "replace_mesh registered as an MCP tool" { & $Python -c "import asyncio; from armorpaint_mcp.server import mcp; names = [t.name for t in asyncio.run(mcp.list_tools())]; assert 'replace_mesh' in names, names; print(names)" }
+
 Write-Host "-- $pass passed, $fail failed --"
 Add-Content -Path $Log -Value "-- $pass passed, $fail failed --"
 if ($fail -gt 0) {
