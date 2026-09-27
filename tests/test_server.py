@@ -1,4 +1,6 @@
 import asyncio
+import os
+import re
 from unittest.mock import patch
 
 import pytest
@@ -574,27 +576,6 @@ def test_decimate_mesh_rejects_a_nonexistent_project_path(tmp_path):
     assert result["output_project"] is None
 
 
-def test_decimate_mesh_copies_then_edits_and_saves(tmp_path):
-    project = tmp_path / "project.arm"
-    project.write_bytes(b"fake")
-    output_project = tmp_path / "out.arm"
-
-    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
-         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
-        mock_cfg.return_value.binary = "ArmorPaint.exe"
-        mock_cfg.return_value.allowed_roots = []
-        mock_run.return_value = ScriptResult(ok=True, stdout="", stderr="")
-
-        result = decimate_mesh(project=str(project), strength=0.5,
-                               output_project=str(output_project))
-
-    assert result == {"ok": True, "output_project": str(output_project), "error": None}
-    assert output_project.exists()  # shutil.copy2 actually ran
-    script_arg = mock_run.call_args[0][2]
-    assert "util_mesh_decimate(0.5);" in script_arg
-    assert "project_save(0);" in script_arg
-
-
 def test_decimate_mesh_is_registered_as_an_mcp_tool():
     tools = asyncio.run(mcp.list_tools())
     by_name = {t.name: t for t in tools}
@@ -635,55 +616,157 @@ def test_decimate_mesh_rejects_output_project_same_as_project(tmp_path):
     assert "in_place=True" in result["error"]
 
 
-def test_decimate_mesh_converts_copy_failure_to_clean_error(tmp_path):
-    """Any OTHER shutil.copy2 failure (permissions, disk full, etc. -- not
-    just the same-file case) must also be converted to this project's
-    standard failure shape rather than escaping uncaught."""
+def _fresh_path_in(script: str) -> str:
+    """The path _save_script told ArmorPaint to save to."""
+    return re.search(r'project_filepath_set\("([^"]+)"\);', script).group(1)
+
+
+def _saving_run(stdout="", write=True):
+    """A run_minic_script stand-in that 'saves' the fresh sibling the script
+    names (as real ArmorPaint would) and returns ok."""
+    def fake(binary, project, script, timeout_s):
+        if write:
+            with open(_fresh_path_in(script), "wb") as fh:
+                fh.write(b"edited")
+        return ScriptResult(ok=True, stdout=stdout, stderr="")
+    return fake
+
+
+def _cfg(mock_cfg):
+    mock_cfg.return_value.binary = "ArmorPaint.exe"
+    mock_cfg.return_value.allowed_roots = []
+
+
+def test_decimate_mesh_edits_the_original_and_saves_to_a_fresh_sibling(tmp_path):
     project = tmp_path / "project.arm"
-    project.write_bytes(b"fake")
+    project.write_bytes(b"original")
+    output_project = tmp_path / "out" / "new" / "out.arm"  # dirs don't exist yet
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script", side_effect=_saving_run()) as mock_run:
+        _cfg(mock_cfg)
+        result = decimate_mesh(project=str(project), strength=0.5,
+                               output_project=str(output_project))
+
+    assert result == {"ok": True, "output_project": str(output_project), "error": None}
+    assert output_project.read_bytes() == b"edited"
+    assert project.read_bytes() == b"original"
+    opened, script = mock_run.call_args[0][1], mock_run.call_args[0][2]
+    assert opened == str(project)                      # the ORIGINAL is opened
+    fresh = _fresh_path_in(script)
+    assert os.path.dirname(fresh) == str(output_project.parent).replace("\\", "/")
+    assert "util_mesh_decimate(0.5);" in script
+    assert script.rstrip().endswith("project_save(0);\n}")         # save is last
+    assert not os.path.exists(fresh)                   # moved, not copied
+    assert os.listdir(output_project.parent) == ["out.arm"]
+
+
+def test_decimate_mesh_fails_when_the_script_ran_but_never_saved(tmp_path):
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"original")
     output_project = tmp_path / "out.arm"
 
     with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
-         patch("armorpaint_mcp.server.shutil.copy2",
-               side_effect=OSError("disk full")):
-        mock_cfg.return_value.binary = "ArmorPaint.exe"
-        mock_cfg.return_value.allowed_roots = []
+         patch("armorpaint_mcp.server.run_minic_script", side_effect=_saving_run(write=False)):
+        _cfg(mock_cfg)
         result = decimate_mesh(project=str(project), strength=0.5,
                                output_project=str(output_project))
 
     assert result["ok"] is False
-    assert result["output_project"] is None
-    assert "disk full" in result["error"]
+    assert "without saving" in result["error"]
+    assert not output_project.exists()
+    assert sorted(os.listdir(tmp_path)) == ["project.arm"]
 
 
-def test_decimate_mesh_removes_stale_copy_on_script_failure(tmp_path):
-    """Cross-task finding: when run_minic_script fails after the copy was
-    already made at output_project, the stale copy (still containing the
-    ORIGINAL unedited project) used to be left on disk while the tool
-    reported output_project: None -- indistinguishable from a normal, valid
-    .arm file to anyone who found it later. The copy must be cleaned up on
-    failure when in_place=False (never touched when in_place=True, since
-    target there IS the caller's own project)."""
+def test_decimate_mesh_timeout_after_a_complete_write_is_a_failure(tmp_path):
+    """Review Focus 5: the spike saw a run hang to its timeout after saving a
+    complete file. The timeout wins; the fresh file must not survive."""
     project = tmp_path / "project.arm"
-    project.write_bytes(b"fake")
+    project.write_bytes(b"original")
     output_project = tmp_path / "out.arm"
+
+    def wrote_then_timed_out(binary, project_, script, timeout_s):
+        with open(_fresh_path_in(script), "wb") as fh:
+            fh.write(b"complete")
+        return ScriptResult(ok=False, stdout="", stderr="",
+                            error="'--script' timed out after 30.0s")
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script", side_effect=wrote_then_timed_out):
+        _cfg(mock_cfg)
+        result = decimate_mesh(project=str(project), strength=0.5,
+                               output_project=str(output_project))
+
+    assert result["ok"] is False
+    assert "timed out" in result["error"]
+    assert sorted(os.listdir(tmp_path)) == ["project.arm"]
+
+
+def test_decimate_mesh_in_place_replaces_the_project_only_after_success(tmp_path):
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"original")
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script", side_effect=_saving_run()):
+        _cfg(mock_cfg)
+        result = decimate_mesh(project=str(project), strength=0.5, in_place=True)
+
+    assert result == {"ok": True, "output_project": str(project), "error": None}
+    assert project.read_bytes() == b"edited"
+    assert os.listdir(tmp_path) == ["project.arm"]
+
+
+def test_decimate_mesh_ignores_a_leftover_fresh_sibling_from_a_crashed_run(tmp_path):
+    """Review Focus 3."""
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"original")
+    stranger = tmp_path / "out.ap-mcp-0123456789ab.tmp.arm"
+    stranger.write_bytes(b"old crash")
+    output_project = tmp_path / "out.arm"
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script", side_effect=_saving_run()):
+        _cfg(mock_cfg)
+        result = decimate_mesh(project=str(project), strength=0.5,
+                               output_project=str(output_project))
+
+    assert result["ok"] is True
+    assert stranger.read_bytes() == b"old crash"
+
+
+def test_decimate_mesh_rejects_a_target_path_minic_cannot_carry(tmp_path):
+    """A '"' can't reach minic: Windows refuses it in a directory name
+    (makedirs fails) and minic_path_literal refuses it in the literal.
+    Either way: a clean failure, and ArmorPaint never launches."""
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"original")
 
     with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
          patch("armorpaint_mcp.server.run_minic_script") as mock_run:
-        mock_cfg.return_value.binary = "ArmorPaint.exe"
-        mock_cfg.return_value.allowed_roots = []
-        mock_run.return_value = ScriptResult(
-            ok=False, stdout="", stderr="", error="'--script' exited 1")
+        _cfg(mock_cfg)
+        result = decimate_mesh(project=str(project), strength=0.5,
+                               output_project=str(tmp_path / 'we"ird' / "out.arm"))
 
+    assert result["ok"] is False
+    assert result["output_project"] is None
+    mock_run.assert_not_called()
+
+
+def test_decimate_mesh_converts_a_replace_failure_to_a_clean_error(tmp_path):
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"original")
+    output_project = tmp_path / "out.arm"
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script", side_effect=_saving_run()), \
+         patch("armorpaint_mcp.server.os.replace", side_effect=OSError("disk full")):
+        _cfg(mock_cfg)
         result = decimate_mesh(project=str(project), strength=0.5,
                                output_project=str(output_project))
 
     assert result["ok"] is False
-    assert result["output_project"] is None
-    # The real assertion: shutil.copy2 really ran for real (this is not
-    # mocked), so this proves the copy was actually cleaned up, not just
-    # that the mock was never called.
-    assert not output_project.exists()
+    assert "disk full" in result["error"]
+    assert sorted(os.listdir(tmp_path)) == ["project.arm"]
 
 
 def test_decimate_mesh_in_place_failure_does_not_delete_project(tmp_path):
@@ -705,6 +788,7 @@ def test_decimate_mesh_in_place_failure_does_not_delete_project(tmp_path):
 
     assert result["ok"] is False
     assert project.exists()
+    assert project.read_bytes() == b"fake"
 
 
 def test_bevel_mesh_calls_the_right_minic_function(tmp_path):
@@ -716,7 +800,7 @@ def test_bevel_mesh_calls_the_right_minic_function(tmp_path):
          patch("armorpaint_mcp.server.run_minic_script") as mock_run:
         mock_cfg.return_value.binary = "ArmorPaint.exe"
         mock_cfg.return_value.allowed_roots = []
-        mock_run.return_value = ScriptResult(ok=True, stdout="", stderr="")
+        mock_run.side_effect = _saving_run()
 
         result = bevel_mesh(project=str(project), amount=0.1,
                             output_project=str(output_project))
@@ -734,7 +818,7 @@ def test_subdivide_mesh_calls_the_right_minic_function(tmp_path):
          patch("armorpaint_mcp.server.run_minic_script") as mock_run:
         mock_cfg.return_value.binary = "ArmorPaint.exe"
         mock_cfg.return_value.allowed_roots = []
-        mock_run.return_value = ScriptResult(ok=True, stdout="", stderr="")
+        mock_run.side_effect = _saving_run()
 
         result = subdivide_mesh(project=str(project), output_project=str(output_project))
 
@@ -765,7 +849,7 @@ def test_smooth_mesh_calls_the_right_minic_function(tmp_path):
          patch("armorpaint_mcp.server.run_minic_script") as mock_run:
         mock_cfg.return_value.binary = "ArmorPaint.exe"
         mock_cfg.return_value.allowed_roots = []
-        mock_run.return_value = ScriptResult(ok=True, stdout="", stderr="")
+        mock_run.side_effect = _saving_run()
 
         result = smooth_mesh(project=str(project), output_project=str(output_project))
 
@@ -782,7 +866,7 @@ def test_duplicate_mesh_calls_the_right_minic_function(tmp_path):
          patch("armorpaint_mcp.server.run_minic_script") as mock_run:
         mock_cfg.return_value.binary = "ArmorPaint.exe"
         mock_cfg.return_value.allowed_roots = []
-        mock_run.return_value = ScriptResult(ok=True, stdout="", stderr="")
+        mock_run.side_effect = _saving_run()
 
         result = duplicate_mesh(project=str(project), output_project=str(output_project))
 
@@ -838,7 +922,7 @@ def test_merge_mesh_geometry_calls_the_right_minic_function_when_enough_objects(
         mock_cfg.return_value.binary = "ArmorPaint.exe"
         mock_cfg.return_value.allowed_roots = []
         mock_api.return_value = ApiResult(ok=True, text=api_text)
-        mock_run.return_value = ScriptResult(ok=True, stdout="", stderr="")
+        mock_run.side_effect = _saving_run()
 
         result = merge_mesh_geometry(project=str(project), output_project=str(output_project))
 
@@ -861,7 +945,7 @@ def test_unwrap_mesh_uvs_calls_the_right_minic_function(tmp_path):
          patch("armorpaint_mcp.server.run_minic_script") as mock_run:
         mock_cfg.return_value.binary = "ArmorPaint.exe"
         mock_cfg.return_value.allowed_roots = []
-        mock_run.return_value = ScriptResult(ok=True, stdout="", stderr="")
+        mock_run.side_effect = _saving_run()
 
         result = unwrap_mesh_uvs(project=str(project), output_project=str(output_project))
 

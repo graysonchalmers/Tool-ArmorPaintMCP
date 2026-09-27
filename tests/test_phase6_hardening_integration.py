@@ -66,3 +66,37 @@ def test_inspect_project_reads_a_project_with_backslash_asset_paths(tmp_path):
     assert result["error"] is None
     assert result["ok"] is True
     assert {o["name"] for o in result["objects"]} >= {"ReplGrid"}
+
+
+import hashlib
+
+from armorpaint_mcp.catalog import extract_project_state
+from armorpaint_mcp.config import load_config
+from armorpaint_mcp.runner import run_api
+from armorpaint_mcp.server import subdivide_mesh
+
+
+def _md5(path) -> str:
+    with open(path, "rb") as fh:
+        return hashlib.md5(fh.read()).hexdigest()
+
+
+@pytest.mark.integration
+def test_mesh_edit_into_another_directory_keeps_asset_paths_resolvable(tmp_path):
+    """Known Issue #11: .arm files store asset paths relative to themselves
+    (io/export_arm.c:70,90,110,130,288,453). A mesh edit written to a
+    different directory must leave every mesh_assets entry pointing at a
+    real file, and must not touch the caller's own project."""
+    project = build_post_append_project(tmp_path / "a")
+    before = _md5(project)
+    output = str(tmp_path / "b" / "nested" / "out.arm")  # dirs don't exist yet
+
+    result = subdivide_mesh(project=project, output_project=output)
+
+    assert result["error"] is None
+    assert result["ok"] is True
+    assert _md5(project) == before
+    state = extract_project_state(run_api(load_config().binary, output).text)
+    assert state["mesh_assets"], state.get("mesh_assets")
+    for asset in state["mesh_assets"]:
+        assert os.path.isfile(asset), f"mesh_assets entry doesn't resolve: {asset}"
