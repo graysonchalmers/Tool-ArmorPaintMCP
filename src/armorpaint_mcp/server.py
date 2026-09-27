@@ -329,10 +329,9 @@ mcp.tool()(merge_mesh_geometry)
 def unwrap_mesh_uvs(project: str, output_project: str | None = None,
                     in_place: bool = False, timeout_s: float = DEFAULT_TIMEOUT_S) -> dict:
     """Re-unwrap the project's mesh UVs via ArmorPaint's own real, built-in
-    unwrap algorithm (plugin_uv_unwrap_button -- calls proc_uv_unwrap()
-    directly, NOT a loaded plugin despite the C function's name; exposed to
-    --script by this project's scoped local patch; see ROADMAP.md's "Patch
-    policy"). Confirmed empirically to genuinely change UV coordinates
+    unwrap algorithm (util_mesh_uv_unwrap; exposed to --script upstream via
+    #2139, renamed from plugin_uv_unwrap_button in 01bae6c5; see ROADMAP.md's
+    "Patch policy"). Confirmed empirically to genuinely change UV coordinates
     (unlike a no-op), unwrap quality/atlas-efficiency vs. xatlas
     (Tool-MeshTriage's unwrapper) has not been compared -- see ROADMAP.md's
     "Known gaps" before relying on this for production-quality UVs.
@@ -348,7 +347,7 @@ def unwrap_mesh_uvs(project: str, output_project: str | None = None,
     UV-coordinate diffs showing a change, not asserted here at runtime).
 
     Returns {"ok": bool, "output_project": str | None, "error": str | None}."""
-    return _run_mesh_edit(project, "plugin_uv_unwrap_button();",
+    return _run_mesh_edit(project, "util_mesh_uv_unwrap();",
                           output_project, in_place, timeout_s)
 
 

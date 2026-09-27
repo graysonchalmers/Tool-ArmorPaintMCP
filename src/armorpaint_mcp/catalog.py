@@ -126,7 +126,7 @@ def scene_objects(api_text: str) -> list[dict]:
 _MESH_EDIT_PATCH_FUNCTIONS = [
     "util_mesh_decimate", "util_mesh_smooth", "util_mesh_bevel",
     "util_mesh_subdivide", "util_mesh_merge_geometry", "util_mesh_duplicate",
-    "plugin_uv_unwrap_button",
+    "util_mesh_uv_unwrap",
 ]
 
 # NOTE: mesh_edit_patch_missing() below does a raw substring match, so a name

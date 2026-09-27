@@ -132,8 +132,8 @@ are different: ArmorPaint 1.0's mesh-editing algorithms are real and working
 but were wired to GUI buttons only, not registered in its minic scripting
 engine. This project's one-line-per-function registration patch was merged
 upstream as [armory3d/armorpaint#2139](https://github.com/armory3d/armorpaint/pull/2139)
-(`ee2f3635`, 2026-09-17), so upstream builds from that commit on carry them,
-with one naming caveat below (see [ROADMAP.md's "Patch policy"](ROADMAP.md#patch-policy)).
+(`ee2f3635`, 2026-09-17), so recent upstream builds carry them (see
+[ROADMAP.md's "Patch policy"](ROADMAP.md#patch-policy)).
 Run `ap-mcp --check` to confirm; v1's five tools work against older builds
 too.
 
@@ -154,22 +154,17 @@ too.
 - **Mesh/UV editing tools need a recent build.** 7 of the 12 shipped tools
   (`decimate_mesh`, `bevel_mesh`, `subdivide_mesh`, `smooth_mesh`,
   `duplicate_mesh`, `merge_mesh_geometry`, `unwrap_mesh_uvs` -- the Phase 5
-  tools) need upstream `main` at or after `ee2f3635` (#2139, 2026-09-17).
-  `ap-mcp --check` reports a clear "mesh-edit patch" failure on an older
-  build.
-  - **Naming caveat (STATUS.md Known Issue #6):** upstream renamed
-    `plugin_uv_unwrap_button` to `util_mesh_uv_unwrap` in `01bae6c5`, the
-    same day. This project still calls the old name, so on a build of
-    current upstream `main`, `unwrap_mesh_uvs` fails and `--check` flags
-    `plugin_uv_unwrap_button` as missing. The other 6 tools are unaffected.
-    Until the project switches names, `unwrap_mesh_uvs` needs a build from
-    before `01bae6c5`, e.g. the checkout's `spike/minic-decimate`.
+  tools) need upstream `main` at or after `01bae6c5` (2026-09-17: the
+  registrations from #2139, with the UV unwrap one renamed to
+  `util_mesh_uv_unwrap`). `ap-mcp --check` reports a clear "mesh-edit patch"
+  failure on an older build.
   - **Known upstream bug:** on stock upstream, `smooth_mesh` and `bevel_mesh`
     intermittently return corrupted geometry (uninitialized accumulator
-    arrays in `util_mesh.c`; STATUS.md Known Issues #4/#5). The fix is a
-    small local commit, not yet upstream -- see [ROADMAP.md's "Patch
-    policy"](ROADMAP.md#patch-policy) for where it lives and its upstream
-    status. Build with it for reliable results from those two tools.
+    arrays in `util_mesh.c`; STATUS.md Known Issues #4/#5). The fix is open
+    upstream as [armory3d/armorpaint#2148](https://github.com/armory3d/armorpaint/pull/2148)
+    (branch `fix/mesh-accumulator-zero-init` on `graysonchalmers/armorpaint`).
+    Until it merges, build that branch for reliable results from those two
+    tools.
 
 ## Install
 

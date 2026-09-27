@@ -43,15 +43,16 @@ explicitly deferred, not rejected — see the spec's "Deferred: live mode".
   `.venv\` (created via `python -m venv .venv`).
 - ArmorPaint checkout: `C:\Projects-local\z-Git\ArmorPaint` (from-scratch
   C/"iron"+Kore engine rewrite). Upstream default branch is `main`. Currently
-  on branch `spike/minic-decimate` at `e246089d` (also pushed to `gc-fork`,
-  `git@github.com:graysonchalmers/armorpaint.git`), 48 commits behind
-  upstream `main` as of 2026-09-27. Two commits on it:
-  `2b528475` (the 7-function mesh-edit registration patch) is **upstream**,
-  merged as armory3d/armorpaint#2139 (`ee2f3635`, 2026-09-17); `e246089d`
-  (zero-init for `util_mesh_smooth`/`util_mesh_bevel`/
-  `util_mesh_calc_normals`'s accumulator arrays, STATUS.md Known Issues
-  #4/#5) is **not yet upstream** -- its PR is the pending next step (see
-  ROADMAP.md's "Patch policy"). Changing this checkout counts as changing
+  on branch `fix/mesh-accumulator-zero-init` at `287e63f4` = upstream `main`
+  `85f6cf1c` + one commit, the zero-init fix for
+  `util_mesh_smooth`/`util_mesh_bevel`/`util_mesh_calc_normals`'s
+  accumulator arrays (STATUS.md Known Issues #4/#5), open upstream as
+  armory3d/armorpaint#2148. Pushed to `gc-fork`
+  (`git@github.com:graysonchalmers/armorpaint.git`). `AP_BINARY` was built
+  from it on 2026-09-27. The mesh-edit registrations themselves are
+  upstream (#2139, `ee2f3635`). The old `spike/minic-decimate` (`e246089d`,
+  pre-rename base) is superseded; this project no longer runs
+  `unwrap_mesh_uvs` against it. Changing this checkout counts as changing
   something outside this project: ask Grayson first. Flag any further local
   changes on top of it the same way.
 - Reference implementation (for comparison only, not a dependency):

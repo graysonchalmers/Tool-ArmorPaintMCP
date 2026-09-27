@@ -61,9 +61,9 @@ MeshTriage, and MeshTriage's scope is unaffected by this pivot.
 | 5 | `smooth_mesh` | ✅ shipped (Phase 5) |
 | 6 | `duplicate_mesh` | ✅ shipped (Phase 5) |
 | 7 | `merge_mesh_geometry` | ✅ shipped (Phase 5) |
-| 8 | Non-destructive mesh replace/swap | ⬜ inconclusive — two real code paths identified (`script_import_asset` destructive, `script_append_mesh` additive), neither empirically confirmed; needs its own bisection + a real multi-object test fixture |
-| 9 | Targeted 2-object merge (`merge_geometry_down`'s real use case) | ⬜ blocked — needs a new minic accessor for "the other object," bigger patch than a one-liner |
-| 10 | UV validity check (1.0 changelog item) | ⬜ unchecked — minic reachability not yet investigated |
+| 8 | Non-destructive mesh replace/swap | ⬜ drafted (Phase 6 draft, 6.2) — source-read: composes with no patch as `script_append_mesh` + `script_object_remove` (`c0df922d`); earlier "inconclusive" likely because the old binary predated `4665266b`'s append fix. Needs a multi-object fixture + D4 semantics decisions |
+| 9 | Targeted 2-object merge (`merge_geometry_down`'s real use case) | ⬜ drafted (Phase 6 draft, 6.3) — earlier "needs a new accessor" was wrong: `script_get_object(name)->ext` reaches the `mesh_object_t` (`MINIC_P(ext)`), so a one-line registration looks feasible. Zero-patch spike first; upstream-vs-local is decision D2 |
+| 10 | UV validity check (1.0 changelog item) | ⬜ drafted (Phase 6 draft, 6.1) — upstream's check (`b62fd323`, OBJ-import-only, console output) isn't script-reachable; plan is a read-only Python check over `script_export_mesh`, no patch |
 | 11 | `inspect_project` | ✅ shipped (v1, Phase 3) |
 | 12 | `reexport_project` | ✅ shipped (v1, Phase 1) |
 | 13 | `create_procedural_material` | ✅ shipped (v1, Phase 2) — covers the materials/blockout secondary want |
@@ -73,7 +73,11 @@ MeshTriage, and MeshTriage's scope is unaffected by this pivot.
 Items 1-7 shipped as Phase 5 (2026-09-16, see docs/PLAN.md and STATUS.md) — every
 one of them was already empirically de-risked going in, unlike the rest of v1's
 phases, which each needed their own hands-on investigation before implementation
-could start. Items 8-10 remain open and are not scoped into any phase yet.
+could start. Items 8-10 are scoped into a **draft** Phase 6 in docs/PLAN.md
+(2026-09-27, source-read only, not approved). It found item 8 composes today
+with no patch (`script_append_mesh` + `script_object_remove`), and item 9's
+"no accessor" blocker was wrong (`object_t.ext` is reachable from minic). Item
+10 is best done Python-side on `script_export_mesh`.
 
 ## Patch policy
 
@@ -95,12 +99,15 @@ the policy above. It's a one-time, narrowly-scoped exception for a confirmed
 correctness bug already blocking two of the seven shipped mesh/UV tools, not a
 reopening of source-patching generally. Commit `e246089d`, on the ArmorPaint
 checkout's `spike/minic-decimate` (also on `gc-fork`), on top of the
-registration patch `2b528475` but independent of it. **Not yet upstream** as of
-2026-09-27: confirmed from source that upstream `main` (`85f6cf1c`) still has
-the bug (`f32_array_resize` is a bare `realloc`; all three functions still
-`+=` into never-zeroed buffers). A rebased, comment-trimmed version (11
-`memset` lines, one file) is drafted as the second upstream PR, pending a
-build+repro on current upstream `main` before it's opened.
+registration patch `2b528475` but independent of it. **Upstream PR open:**
+upstream `main` (`85f6cf1c`) still had the bug as of 2026-09-27
+(`f32_array_resize` is a bare `realloc`; all three functions still `+=` into
+never-zeroed buffers). Rebased and comment-trimmed (11 `memset` lines, one
+file, clang-format clean) as `287e63f4` on the checkout's
+`fix/mesh-accumulator-zero-init`, opened 2026-09-27 as
+[armory3d/armorpaint#2148](https://github.com/armory3d/armorpaint/pull/2148).
+Repro on current upstream `main`, 10 runs: stock 3/10 smooth + 9/10 bevel
+corrupted, fixed 0/10 + 0/10.
 
 - **Mechanism:** one line per function in `minic_api_list.h`
   (`X0`/`X1`/... macro, matching the C function's real signature) — ArmorPaint's own
@@ -122,17 +129,15 @@ build+repro on current upstream `main` before it's opened.
 - **Upstream ambition: done.** Grayson's first open-source contribution, merged
   same day it was opened. Item 9's dead end was left out of it.
 - **Operational dependency now:** `AP_BINARY` must be a build of upstream `main`
-  at or after `ee2f3635`, plus the zero-init commit above for reliable
-  `smooth_mesh`/`bevel_mesh` until it lands upstream. `--check`'s "mesh-edit
-  patch" preflight (`src/armorpaint_mcp/doctor.py`) catches an older build with
-  a clear error instead of a silent "function not found" minic failure. ⚠️ This
-  project's tools have not yet been re-run against a build of current upstream
-  `main` (48 commits past our old base, including the script API cleanup); the
-  local `AP_BINARY` is still the 2026-09-17 build of `spike/minic-decimate`.
-  One break is already confirmed from source: upstream `01bae6c5` renamed
-  `plugin_uv_unwrap_button` to `util_mesh_uv_unwrap` (STATUS.md Known Issue
-  #6). The other 6 registrations, `project_save`, and `script_export_mesh` are
-  unchanged on upstream `main`.
+  at or after `01bae6c5` (which renamed `plugin_uv_unwrap_button` to
+  `util_mesh_uv_unwrap`, the name this project now calls; STATUS.md Known
+  Issue #6), plus the zero-init commit above for reliable
+  `smooth_mesh`/`bevel_mesh` until #2148 lands. `--check`'s "mesh-edit patch"
+  preflight (`src/armorpaint_mcp/doctor.py`) catches an older build with a
+  clear error instead of a silent "function not found" minic failure. Since
+  2026-09-27 the local `AP_BINARY` is built from the checkout's
+  `fix/mesh-accumulator-zero-init` (`287e63f4` = upstream `main` `85f6cf1c` +
+  the fix), with unit/integration/smoke all green on it.
 
 ## Known gaps / open questions
 

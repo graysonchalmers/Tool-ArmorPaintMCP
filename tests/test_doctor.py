@@ -32,7 +32,7 @@ def test_check_setup_passes_when_the_mesh_edit_patch_is_present(tmp_path):
         f"{name}()" for name in [
             "util_mesh_decimate", "util_mesh_smooth", "util_mesh_bevel",
             "util_mesh_subdivide", "util_mesh_merge_geometry",
-            "util_mesh_duplicate", "plugin_uv_unwrap_button",
+            "util_mesh_duplicate", "util_mesh_uv_unwrap",
         ])
 
     with patch("armorpaint_mcp.doctor.subprocess.run") as mock_run:

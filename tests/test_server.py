@@ -858,7 +858,7 @@ def test_unwrap_mesh_uvs_calls_the_right_minic_function(tmp_path):
         result = unwrap_mesh_uvs(project=str(project), output_project=str(output_project))
 
     assert result["ok"] is True
-    assert "plugin_uv_unwrap_button();" in mock_run.call_args[0][2]
+    assert "util_mesh_uv_unwrap();" in mock_run.call_args[0][2]
 
 
 def test_unwrap_mesh_uvs_is_registered_as_an_mcp_tool():

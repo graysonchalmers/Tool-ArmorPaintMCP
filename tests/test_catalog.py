@@ -119,7 +119,7 @@ def test_mesh_edit_patch_missing_reports_all_seven_when_none_present():
     assert sorted(missing) == sorted([
         "util_mesh_decimate", "util_mesh_smooth", "util_mesh_bevel",
         "util_mesh_subdivide", "util_mesh_merge_geometry",
-        "util_mesh_duplicate", "plugin_uv_unwrap_button",
+        "util_mesh_duplicate", "util_mesh_uv_unwrap",
     ])
 
 
@@ -131,7 +131,7 @@ def test_mesh_edit_patch_missing_empty_when_all_present():
         "util_mesh_subdivide()\n"
         "util_mesh_merge_geometry()\n"
         "util_mesh_duplicate()\n"
-        "plugin_uv_unwrap_button()\n"
+        "util_mesh_uv_unwrap()\n"
     )
     assert mesh_edit_patch_missing(patched_api_text) == []
 
