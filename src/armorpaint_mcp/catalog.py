@@ -146,6 +146,8 @@ EMITTED_MINIC_FUNCTIONS = (
     "script_fill_layer", "export_texture_run",
     # saving tools (server._save_script)
     "project_filepath_set", "project_save",
+    # check_mesh_uvs / replace_mesh verification exports
+    "script_export_mesh",
 )
 
 

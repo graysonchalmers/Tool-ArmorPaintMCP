@@ -11,7 +11,8 @@ from armorpaint_mcp.runner import DEFAULT_TIMEOUT_S, ExportResult, ApiResult, Sc
 from armorpaint_mcp.server import (mcp, reexport_project, create_procedural_material,
                                    list_available_presets, inspect_project, run_script,
                                    decimate_mesh, bevel_mesh, subdivide_mesh, smooth_mesh,
-                                   duplicate_mesh, merge_mesh_geometry, unwrap_mesh_uvs)
+                                   duplicate_mesh, merge_mesh_geometry, unwrap_mesh_uvs,
+                                   check_mesh_uvs)
 
 
 @pytest.fixture(autouse=True)
@@ -957,3 +958,61 @@ def test_unwrap_mesh_uvs_is_registered_as_an_mcp_tool():
     tools = asyncio.run(mcp.list_tools())
     by_name = {t.name: t for t in tools}
     assert "unwrap_mesh_uvs" in by_name, sorted(by_name)
+
+
+QUAD_OBJ = ("o Quad\nv 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\n"
+            "vt 0 0\nvt 1 0\nvt 1 1\nvt 0 1\nf 1/1 2/2 3/3\nf 1/1 3/3 4/4\n")
+
+
+def _exporting_run(obj_text):
+    def fake(binary, project, script, timeout_s):
+        path = re.search(r'script_export_mesh\("([^"]+)"\);', script).group(1)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(obj_text)
+        return ScriptResult(ok=True, stdout="", stderr="")
+    return fake
+
+
+def test_check_mesh_uvs_reports_per_object_verdicts(tmp_path):
+    project = tmp_path / "p.arm"
+    project.write_bytes(b"x")
+    bad = QUAD_OBJ.replace("vt 1 1", "vt 1.5 1")
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script", side_effect=_exporting_run(bad)):
+        _cfg(mock_cfg)
+        result = check_mesh_uvs(str(project))
+        relaxed = check_mesh_uvs(str(project), allow_udim=True)
+
+    assert result["ok"] is True and result["error"] is None
+    assert result["valid"] is False
+    (obj,) = result["objects"]
+    assert obj["name"] == "Quad" and obj["valid"] is False
+    assert "coverage_pct" in obj["metrics"]
+    assert relaxed["valid"] is True
+
+
+def test_check_mesh_uvs_fails_cleanly_when_the_export_never_appears(tmp_path):
+    project = tmp_path / "p.arm"
+    project.write_bytes(b"x")
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script",
+               return_value=ScriptResult(ok=True, stdout="", stderr="")):
+        _cfg(mock_cfg)
+        result = check_mesh_uvs(str(project))
+
+    assert result == {"ok": False, "error": result["error"], "valid": None, "objects": None}
+    assert "mesh export" in result["error"]
+
+
+def test_check_mesh_uvs_rejects_a_non_arm_path(tmp_path):
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg:
+        _cfg(mock_cfg)
+        result = check_mesh_uvs(str(tmp_path / "nope.arm"))
+    assert result["ok"] is False and result["objects"] is None
+
+
+def test_check_mesh_uvs_is_registered_as_an_mcp_tool():
+    by_name = {t.name: t for t in asyncio.run(mcp.list_tools())}
+    tool = by_name["check_mesh_uvs"]
+    assert set(tool.input_schema["properties"]) == {"project", "allow_udim", "timeout_s"}
+    assert set(tool.input_schema.get("required", [])) == {"project"}

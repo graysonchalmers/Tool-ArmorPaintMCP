@@ -53,6 +53,7 @@ def _captured_scripts(tmp_path) -> list[str]:
         lambda: server.smooth_mesh(str(project), str(tmp_path / "o.arm")),
         lambda: server.duplicate_mesh(str(project), str(tmp_path / "o.arm")),
         lambda: server.unwrap_mesh_uvs(str(project), str(tmp_path / "o.arm")),
+        lambda: server.check_mesh_uvs(str(project)),
     ]
     with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
          patch("armorpaint_mcp.server.run_minic_script", side_effect=capture):

@@ -1,10 +1,11 @@
 import os
 import sys
+import tempfile
 import uuid
 
 from mcp.server.mcpserver import MCPServer
 
-from armorpaint_mcp import __version__
+from armorpaint_mcp import __version__, uv_analysis
 from armorpaint_mcp.config import load_config, require_valid
 from armorpaint_mcp.doctor import run_check
 from armorpaint_mcp.catalog import (CatalogError, extract_project_state,
@@ -553,6 +554,69 @@ def inspect_project(project: str) -> dict:
 
 
 mcp.tool()(inspect_project)
+
+
+def _export_obj(cfg, project: str, out_path: str,
+                timeout_s: float) -> tuple[str | None, str | None]:
+    """Export `project`'s meshes to `out_path` via script_export_mesh (one
+    `o <name>` group per paint object, object-local coordinates -- spike S1)
+    and return (text, None), or (None, error)."""
+    try:
+        target = minic_path_literal(out_path, "export path")
+    except NodeSpecError as exc:
+        return None, str(exc)
+    script = f"void main() {{\n\tscript_export_mesh({target});\n}}\n"
+    result = run_minic_script(cfg.binary, project, script, timeout_s)
+    if not result.ok:
+        return None, result.error
+    if not os.path.isfile(out_path):
+        return None, "ArmorPaint finished without writing the mesh export"
+    with open(out_path, encoding="utf-8", errors="replace") as fh:
+        return fh.read(), None
+
+
+def check_mesh_uvs(project: str, allow_udim: bool = False,
+                   timeout_s: float = DEFAULT_TIMEOUT_S) -> dict:
+    """Read-only UV validity report for every object in an existing .arm
+    project. Exports the meshes through ArmorPaint and analyzes the UVs in
+    Python (docs/PLAN.md 6.2); makes no changes to the project. Bounded by
+    AP_ALLOWED_ROOTS when set.
+
+    Per object, `errors` make `valid` false: faces without UVs, UV-degenerate
+    triangles covering more than 0.1% of the 3D surface (paint can't land
+    there), and UVs outside [0,1] (a warning instead with allow_udim=True).
+    `warnings` are often deliberate: overlapping UVs (stacked/mirrored
+    islands) and flipped UV triangles. `metrics` carries the numbers
+    (coverage_pct, overlap_pct, flipped_pct, uv_islands, ...). ArmorPaint's
+    importer folds UVs above 1 into [0,1] (base/sources/iron_obj.c), so an
+    imported project rarely shows out-of-range UVs even if its source had
+    them.
+
+    Returns {"ok": bool, "valid": bool | None, "objects": [{"name", "valid",
+    "errors", "warnings", "metrics"}] | None, "error": str | None}."""
+    cfg = _ensure_ready()
+    try:
+        project = ensure_within_roots(project, cfg.allowed_roots)
+    except PathNotAllowed as exc:
+        return _failure(str(exc), "valid", "objects")
+    if not _is_arm_project_file(project):
+        return _failure(f"'{project}' is not an existing .arm project file",
+                        "valid", "objects")
+    with tempfile.TemporaryDirectory(prefix="ap-mcp-") as tmp:
+        text, error = _export_obj(cfg, project, os.path.join(tmp, "mesh.obj"), timeout_s)
+    if error is not None:
+        return _failure(error, "valid", "objects")
+    obj = uv_analysis.parse_obj(text)
+    objects = []
+    for name, group in uv_analysis.groups_by_name(obj).items():
+        metrics = uv_analysis.analyze(obj, group)
+        objects.append({"name": name, **uv_analysis.verdict(metrics, allow_udim),
+                        "metrics": metrics})
+    return {"ok": True, "valid": all(o["valid"] for o in objects),
+            "objects": objects, "error": None}
+
+
+mcp.tool()(check_mesh_uvs)
 
 
 def run_script(project: str, script: str, timeout_s: float = DEFAULT_TIMEOUT_S) -> dict:
