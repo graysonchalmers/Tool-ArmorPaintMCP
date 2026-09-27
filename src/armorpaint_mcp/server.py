@@ -697,8 +697,9 @@ def replace_mesh(project: str, old_object: str, new_mesh: str, mode: str = "roun
                 f"the replace can target one unambiguously")
         material = rp.material_override_name(before, old_object)  # also checks it exists
         script = rp.build_replace_script(old_object, new_mesh, fresh, material)
-    except (rp.ReplaceError, NodeSpecError, KeyError, IndexError, TypeError) as exc:
-        if isinstance(exc, (KeyError, IndexError, TypeError)):
+    except (rp.ReplaceError, NodeSpecError, KeyError, IndexError, TypeError,
+            AttributeError) as exc:
+        if isinstance(exc, (KeyError, IndexError, TypeError, AttributeError)):
             return _replace_failure(f"unexpected project state: {exc}")
         return _replace_failure(str(exc))
 
@@ -728,9 +729,12 @@ def replace_mesh(project: str, old_object: str, new_mesh: str, mode: str = "roun
             return _replace_failure(f"replace did not verify: {problem}")
         # UV gate (Task 9)
         os.replace(fresh, target)
-    except (OSError, KeyError, IndexError, TypeError) as exc:
+    except (OSError, KeyError, IndexError, TypeError, AttributeError,
+            ValueError, rp.ReplaceError) as exc:
         if isinstance(exc, OSError):
             return _replace_failure(f"could not write output_project: {exc}")
+        if isinstance(exc, rp.ReplaceError):
+            return _replace_failure(f"replace did not verify: {exc}")
         return _replace_failure(f"unexpected project state: {exc}")
     finally:
         _remove_quietly(fresh)

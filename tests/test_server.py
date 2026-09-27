@@ -1164,6 +1164,47 @@ def test_replace_mesh_never_raises_on_malformed_state_in_the_post_verify_block(t
     assert sorted(os.listdir(tmp_path)) == ["g.obj", "p.arm"]
 
 
+def test_replace_mesh_never_raises_when_the_after_state_has_duplicate_material_names(tmp_path):
+    """Fix round 1 (task-8-fix1-findings.md #1): rp.material_override_name(after,
+    old_object) raises rp.ReplaceError when the AFTER state's material_nodes has
+    a duplicated name for the object's material index (e.g. an appended
+    glb/fbx/blend import that happens to clash with an existing material name).
+    The post-verify except tuple must catch this too, and still clean up the
+    fresh temp file."""
+    project = tmp_path / "p.arm"
+    project.write_bytes(b"x")
+    mesh = tmp_path / "g.obj"
+    mesh.write_text("o G\nv 0 0 0\nv 1 0 0\nv 1 1 0\nvt 0 0\nvt 1 0\nvt 1 1\nf 1/1 2/2 3/3\n")
+    # AFTER: "Cone" (index 1) now points at material index 0, and
+    # material_nodes has two entries both named "Mat" -- material_override_name
+    # can't tell them apart and raises ReplaceError instead of a name.
+    after_state = dict(STATE_BEFORE, **{
+        "mesh_materials[i32]": [-1, 0],
+        "material_nodes": [{"name": "Mat"}, {"name": "Mat"}],
+    })
+
+    def _fake_run(binary, project_path, script, timeout_s):
+        for line in script.splitlines():
+            if "project_filepath_set(" in line:
+                fresh_path = line.split('"')[1]
+                with open(fresh_path, "wb") as fh:
+                    fh.write(b"fresh")
+                break
+        return ScriptResult(ok=True, stdout="", stderr="")
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server._project_state",
+               side_effect=[(STATE_BEFORE, None), (after_state, None)]), \
+         patch("armorpaint_mcp.server._export_obj", return_value=("o Cone\no Tessellated\n", None)), \
+         patch("armorpaint_mcp.server.run_minic_script", side_effect=_fake_run):
+        _cfg(mock_cfg)
+        result = replace_mesh(str(project), "Cone", str(mesh), mode="swap",
+                              output_project=str(tmp_path / "o.arm"))
+    assert result["ok"] is False
+    # No leftover .tmp.arm fresh sibling, and output_project was never written.
+    assert sorted(os.listdir(tmp_path)) == ["g.obj", "p.arm"]
+
+
 def test_replace_mesh_is_registered_as_an_mcp_tool():
     by_name = {t.name: t for t in asyncio.run(mcp.list_tools())}
     tool = by_name["replace_mesh"]
