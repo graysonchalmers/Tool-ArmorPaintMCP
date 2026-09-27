@@ -640,16 +640,25 @@ def check_mesh_uvs(project: str, allow_udim: bool = False,
                         "valid", "objects")
     if (error := _argv_path_error(project, "project")) is not None:
         return _failure(error, "valid", "objects")
-    with tempfile.TemporaryDirectory(prefix="ap-mcp-") as tmp:
-        text, error = _export_obj(cfg, project, os.path.join(tmp, "mesh.obj"), timeout_s)
+    try:
+        with tempfile.TemporaryDirectory(prefix="ap-mcp-") as tmp:
+            text, error = _export_obj(cfg, project, os.path.join(tmp, "mesh.obj"), timeout_s)
+    except OSError as exc:  # reading the export, or removing the temp dir
+        return _failure(f"could not read the mesh export: {exc}", "valid", "objects")
     if error is not None:
         return _failure(error, "valid", "objects")
-    obj = uv_analysis.parse_obj(text)
-    objects = []
-    for name, group in uv_analysis.groups_by_name(obj).items():
-        metrics = uv_analysis.analyze(obj, group)
-        objects.append({"name": name, **uv_analysis.verdict(metrics, allow_udim),
-                        "metrics": metrics})
+    try:
+        obj = uv_analysis.parse_obj(text)
+        groups = uv_analysis.groups_by_name(obj)
+        objects = []
+        for name, group in groups.items():
+            metrics = uv_analysis.analyze(obj, group)
+            objects.append({"name": name, **uv_analysis.verdict(metrics, allow_udim),
+                            "metrics": metrics})
+    except (ValueError, IndexError) as exc:
+        return _failure(f"could not analyze the mesh export: {exc}", "valid", "objects")
+    if not objects:
+        return _failure("export contained no objects with faces", "valid", "objects")
     return {"ok": True, "valid": all(o["valid"] for o in objects),
             "objects": objects, "error": None}
 
@@ -706,6 +715,9 @@ def _replace_uv_gate(before_text: str, after_text: str, old_object: str, mode: s
             return gate, (f"the UV layout changed (IoU {cmp['iou']} < {uv_analysis.IOU_MIN}); "
                           f"the paint would scramble -- use mode='swap' if that's expected")
         retention = cmp["retention"]
+        if retention is None:
+            gate["warnings"].append("texel retention not assessable (fully overlapping UVs); "
+                                    "round_trip verified by IoU only")
         if retention is not None and retention < uv_analysis.RETENTION_MIN:
             return gate, (f"only {retention:.0%} of painted texels would stay in place "
                           f"(retention {retention} < {uv_analysis.RETENTION_MIN}); use "
@@ -764,6 +776,8 @@ def replace_mesh(project: str, old_object: str, new_mesh: str, mode: str = "roun
         rp.precheck_replacement(new_mesh, allow_udim)
     except rp.ReplaceError as exc:
         return _replace_failure(str(exc))
+    except (OSError, ValueError, IndexError) as exc:
+        return _replace_failure(f"could not read new_mesh as OBJ: {exc}")
 
     before, error = _project_state(cfg, project, timeout_s)
     if error is not None:

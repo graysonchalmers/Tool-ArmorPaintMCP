@@ -1382,3 +1382,115 @@ def test_an_ascii_path_with_spaces_passes_the_argv_guard(tmp_path):
         result = run_script(project, "void main() {}\n")
     assert result["ok"] is True
     mock_run.assert_called_once()
+
+
+# --- Final-review I2 / I3 / M1 / M2 --------------------------------------------
+
+_MALFORMED_OBJS = {
+    # a face referencing texture coordinates that don't exist -> IndexError
+    "face_references_missing_vt": "o G\nv 0 0 0\nv 1 0 0\nv 1 1 0\nvt 0 0\nvt 1 0\nvt 1 1\n"
+                                  "f 1/4 2/5 3/6\n",
+    # a `v` line with only two coordinates -> IndexError
+    "two_coordinate_vertex": "o G\nv 0 0\nv 1 0 0\nv 1 1 0\nvt 0 0\nvt 1 0\nvt 1 1\n"
+                             "f 1/1 2/2 3/3\n",
+    # a non-numeric token -> ValueError
+    "non_numeric_token": "o G\nv 0 a 0\nv 1 0 0\nv 1 1 0\nvt 0 0\nvt 1 0\nvt 1 1\n"
+                         "f 1/1 2/2 3/3\n",
+}
+
+
+@pytest.mark.parametrize("shape", sorted(_MALFORMED_OBJS))
+def test_replace_mesh_never_raises_on_a_malformed_replacement_obj(tmp_path, shape):
+    project = tmp_path / "p.arm"
+    project.write_bytes(b"x")
+    mesh = tmp_path / "g.obj"
+    mesh.write_text(_MALFORMED_OBJS[shape])
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_api") as mock_api, \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
+        _cfg(mock_cfg)
+        result = replace_mesh(str(project), "Cone", str(mesh), mode="swap",
+                              output_project=str(tmp_path / "o.arm"))
+    assert result["ok"] is False
+    assert result["error"].startswith("could not read new_mesh as OBJ: ")
+    assert all(result[k] is None for k in ("output_project", "iou", "retention", "warnings"))
+    mock_api.assert_not_called()
+    mock_run.assert_not_called()
+
+
+def test_replace_mesh_keeps_a_replace_error_s_own_message(tmp_path):
+    project = tmp_path / "p.arm"
+    project.write_bytes(b"x")
+    mesh = tmp_path / "g.obj"
+    mesh.write_text("o G\nv 0 0 0\nv 1 0 0\nv 1 1 0\nf 1 2 3\n")
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg:
+        _cfg(mock_cfg)
+        result = replace_mesh(str(project), "Cone", str(mesh), mode="swap",
+                              output_project=str(tmp_path / "o.arm"))
+    assert result["ok"] is False
+    assert result["error"].startswith("the replacement OBJ has no UVs")
+
+
+def test_check_mesh_uvs_fails_when_the_export_has_no_faces(tmp_path):
+    project = tmp_path / "p.arm"
+    project.write_bytes(b"x")
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script",
+               side_effect=_exporting_run("o Empty\nv 0 0 0\n")):
+        _cfg(mock_cfg)
+        result = check_mesh_uvs(str(project))
+    assert result == {"ok": False, "error": "export contained no objects with faces",
+                      "valid": None, "objects": None}
+
+
+def test_check_mesh_uvs_never_raises_on_a_malformed_export(tmp_path):
+    project = tmp_path / "p.arm"
+    project.write_bytes(b"x")
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script",
+               side_effect=_exporting_run("o Bad\nv 0 0\nv 1 0 0\nv 1 1 0\nf 1 2 3\n")):
+        _cfg(mock_cfg)
+        result = check_mesh_uvs(str(project))
+    assert result["ok"] is False and result["valid"] is None and result["objects"] is None
+    assert result["error"].startswith("could not analyze the mesh export: ")
+
+
+def test_check_mesh_uvs_never_raises_when_temp_cleanup_fails(tmp_path):
+    project = tmp_path / "p.arm"
+    project.write_bytes(b"x")
+
+    class _Tmp:
+        def __init__(self, *a, **kw):
+            self.name = str(tmp_path / "t")
+            os.makedirs(self.name)
+
+        def __enter__(self):
+            return self.name
+
+        def __exit__(self, *exc):
+            raise PermissionError("in use")
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.tempfile.TemporaryDirectory", _Tmp), \
+         patch("armorpaint_mcp.server.run_minic_script", side_effect=_exporting_run(QUAD_OBJ)):
+        _cfg(mock_cfg)
+        result = check_mesh_uvs(str(project))
+    assert result["ok"] is False and "in use" in result["error"]
+
+
+STACKED_OBJ = ("o Base\nv 0 0 0\nv 1 0 0\nv 0 1 0\nv 0 0 1\nv 1 0 1\nv 0 1 1\n"
+               "vt 0.1 0.1\nvt 0.9 0.1\nvt 0.1 0.9\nf 1/1 2/2 3/3\nf 4/1 5/2 6/3\n")
+
+
+def test_uv_gate_warns_when_retention_is_not_assessable_in_round_trip_mode():
+    gate, error = server._replace_uv_gate(STACKED_OBJ, STACKED_OBJ, "Base", "round_trip", False, 1)
+    assert error is None
+    assert gate["retention"] is None and gate["iou"] == 1.0
+    assert ("texel retention not assessable (fully overlapping UVs); round_trip verified "
+            "by IoU only") in gate["warnings"]
+
+
+def test_uv_gate_swap_mode_does_not_add_the_retention_warning():
+    gate, error = server._replace_uv_gate(STACKED_OBJ, STACKED_OBJ, "Base", "swap", False, 1)
+    assert error is None
+    assert not any("retention not assessable" in w for w in gate["warnings"])
