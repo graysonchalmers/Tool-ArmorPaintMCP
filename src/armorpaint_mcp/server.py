@@ -207,14 +207,13 @@ def decimate_mesh(project: str, strength: float, output_project: str | None = No
                   in_place: bool = False, timeout_s: float = DEFAULT_TIMEOUT_S) -> dict:
     """Reduce the project's mesh polycount via ArmorPaint's own decimate
     algorithm (util_mesh_decimate -- a real, working GUI tool as of
-    ArmorPaint 1.0, exposed to --script by this project's scoped local
-    patch; see ROADMAP.md's "Patch policy"). `strength` is 0.0-1.0-ish
+    ArmorPaint 1.0, exposed to --script upstream by #2139). `strength` is 0.0-1.0-ish
     (ArmorPaint's own GUI default is 0.5); higher removes more geometry.
     Writes the result to `output_project` by default (the caller's `project`
     is never modified) -- pass in_place=True to mutate `project` itself
-    instead, in which case output_project must be omitted. Requires
-    AP_BINARY to be a build carrying the mesh-edit patch (run `ap-mcp
-    --check` to confirm). Bounded by AP_ALLOWED_ROOTS when set.
+    instead, in which case output_project must be omitted. Requires an AP_BINARY with the upstream mesh-edit
+    registrations (#2139, main at or after 01bae6c5); `ap-mcp --check`'s
+    "minic API" row verifies them. Bounded by AP_ALLOWED_ROOTS when set.
 
     ok=True means ArmorPaint exited cleanly, printed no script error, and
     saved the result -- not that the reduction looks good; inspect the result yourself for anything
@@ -236,13 +235,13 @@ mcp.tool()(decimate_mesh)
 def bevel_mesh(project: str, amount: float, output_project: str | None = None,
                in_place: bool = False, timeout_s: float = DEFAULT_TIMEOUT_S) -> dict:
     """Bevel the project's mesh edges via ArmorPaint's own bevel algorithm
-    (util_mesh_bevel -- exposed to --script by this project's scoped local
-    patch; see ROADMAP.md's "Patch policy"). `amount` is the bevel distance
+    (util_mesh_bevel -- exposed to --script upstream by #2139). `amount` is the bevel distance
     (ArmorPaint's own GUI default is 0.1). Writes the result to
     `output_project` by default (the caller's `project` is never modified)
     -- pass in_place=True to mutate `project` itself instead, in which case
-    output_project must be omitted. Requires AP_BINARY to be a build
-    carrying the mesh-edit patch (run `ap-mcp --check` to confirm).
+    output_project must be omitted. Requires an AP_BINARY with the upstream mesh-edit
+    registrations (#2139, main at or after 01bae6c5); `ap-mcp --check`'s
+    "minic API" row verifies them.
     Bounded by AP_ALLOWED_ROOTS when set.
 
     ok=True means ArmorPaint exited cleanly, printed no script error, and
@@ -263,13 +262,13 @@ mcp.tool()(bevel_mesh)
 def subdivide_mesh(project: str, output_project: str | None = None,
                    in_place: bool = False, timeout_s: float = DEFAULT_TIMEOUT_S) -> dict:
     """Subdivide the project's mesh via ArmorPaint's own subdivide algorithm
-    (util_mesh_subdivide -- exposed to --script by this project's scoped
-    local patch; see ROADMAP.md's "Patch policy"). Confirmed empirically to
+    (util_mesh_subdivide -- exposed to --script upstream by #2139). Confirmed empirically to
     be an exact 4x face-count operation on this build. Writes the result to
     `output_project` by default (the caller's `project` is never modified)
     -- pass in_place=True to mutate `project` itself instead, in which case
-    output_project must be omitted. Requires AP_BINARY to be a build
-    carrying the mesh-edit patch (run `ap-mcp --check` to confirm). Bounded
+    output_project must be omitted. Requires an AP_BINARY with the upstream mesh-edit
+    registrations (#2139, main at or after 01bae6c5); `ap-mcp --check`'s
+    "minic API" row verifies them. Bounded
     by AP_ALLOWED_ROOTS when set.
 
     ok=True means ArmorPaint exited cleanly, printed no script error, and
@@ -288,14 +287,13 @@ mcp.tool()(subdivide_mesh)
 def smooth_mesh(project: str, output_project: str | None = None,
                 in_place: bool = False, timeout_s: float = DEFAULT_TIMEOUT_S) -> dict:
     """Smooth the project's mesh via ArmorPaint's own smoothing algorithm
-    (util_mesh_smooth -- exposed to --script by this project's scoped local
-    patch; see ROADMAP.md's "Patch policy"). Does not change vertex/face
+    (util_mesh_smooth -- exposed to --script upstream by #2139). Does not change vertex/face
     count (confirmed empirically), only vertex positions and normals.
     Writes the result to `output_project` by default (the caller's `project`
     is never modified) -- pass in_place=True to mutate `project` itself
-    instead, in which case output_project must be omitted. Requires
-    AP_BINARY to be a build carrying the mesh-edit patch (run `ap-mcp
-    --check` to confirm). Bounded by AP_ALLOWED_ROOTS when set.
+    instead, in which case output_project must be omitted. Requires an AP_BINARY with the upstream mesh-edit
+    registrations (#2139, main at or after 01bae6c5); `ap-mcp --check`'s
+    "minic API" row verifies them. Bounded by AP_ALLOWED_ROOTS when set.
 
     ok=True means ArmorPaint exited cleanly, printed no script error, and
     saved the result -- not that the smoothing looks good; inspect the result yourself for
@@ -314,14 +312,14 @@ mcp.tool()(smooth_mesh)
 def duplicate_mesh(project: str, output_project: str | None = None,
                    in_place: bool = False, timeout_s: float = DEFAULT_TIMEOUT_S) -> dict:
     """Duplicate the project's mesh object via ArmorPaint's own duplicate
-    function (util_mesh_duplicate -- exposed to --script by this project's
-    scoped local patch; see ROADMAP.md's "Patch policy"). Confirmed
+    function (util_mesh_duplicate -- exposed to --script upstream by #2139). Confirmed
     empirically to be an exact 2x vertex/face-count operation, adding a
     second object to the scene. Writes the result to `output_project` by
     default (the caller's `project` is never modified) -- pass
     in_place=True to mutate `project` itself instead, in which case
-    output_project must be omitted. Requires AP_BINARY to be a build
-    carrying the mesh-edit patch (run `ap-mcp --check` to confirm). Bounded
+    output_project must be omitted. Requires an AP_BINARY with the upstream mesh-edit
+    registrations (#2139, main at or after 01bae6c5); `ap-mcp --check`'s
+    "minic API" row verifies them. Bounded
     by AP_ALLOWED_ROOTS when set.
 
     ok=True means ArmorPaint exited cleanly, printed no script error, and
@@ -341,8 +339,7 @@ mcp.tool()(duplicate_mesh)
 def merge_mesh_geometry(project: str, output_project: str | None = None,
                         in_place: bool = False, timeout_s: float = DEFAULT_TIMEOUT_S) -> dict:
     """Merge every object in the project into one, via ArmorPaint's own
-    util_mesh_merge_geometry (exposed to --script by this project's scoped
-    local patch; see ROADMAP.md's "Patch policy").
+    util_mesh_merge_geometry (exposed to --script upstream by #2139).
 
     IMPORTANT: this merges ALL objects in the project, not a specific pair.
     ArmorPaint's GUI "merge with the object below" targeting
@@ -358,9 +355,9 @@ def merge_mesh_geometry(project: str, output_project: str | None = None,
 
     Writes the result to `output_project` by default (the caller's `project`
     is never modified) -- pass in_place=True to mutate `project` itself
-    instead, in which case output_project must be omitted. Requires
-    AP_BINARY to be a build carrying the mesh-edit patch (run `ap-mcp
-    --check` to confirm). Bounded by AP_ALLOWED_ROOTS when set.
+    instead, in which case output_project must be omitted. Requires an AP_BINARY with the upstream mesh-edit
+    registrations (#2139, main at or after 01bae6c5); `ap-mcp --check`'s
+    "minic API" row verifies them. Bounded by AP_ALLOWED_ROOTS when set.
 
     Returns {"ok": bool, "output_project": str | None, "error": str | None}."""
     cfg = _ensure_ready()
@@ -412,9 +409,9 @@ def unwrap_mesh_uvs(project: str, output_project: str | None = None,
 
     Writes the result to `output_project` by default (the caller's `project`
     is never modified) -- pass in_place=True to mutate `project` itself
-    instead, in which case output_project must be omitted. Requires
-    AP_BINARY to be a build carrying the mesh-edit patch (run `ap-mcp
-    --check` to confirm). Bounded by AP_ALLOWED_ROOTS when set.
+    instead, in which case output_project must be omitted. Requires an AP_BINARY with the upstream mesh-edit
+    registrations (#2139, main at or after 01bae6c5); `ap-mcp --check`'s
+    "minic API" row verifies them. Bounded by AP_ALLOWED_ROOTS when set.
 
     ok=True means ArmorPaint exited cleanly, printed no script error, and
     saved the result -- not that the unwrap looks good (that's a separate claim from the
@@ -752,7 +749,8 @@ def replace_mesh(project: str, old_object: str, new_mesh: str, mode: str = "roun
     the old one's size (a Blender FBX lands at 100x), UV warnings from
     check_mesh_uvs, and -- on multi-object projects -- that ArmorPaint's
     Reimport Mesh would now reload only `new_mesh` and drop the other
-    objects. Bounded by AP_ALLOWED_ROOTS when set.
+    objects. Bounded by AP_ALLOWED_ROOTS when set. A call launches
+    ArmorPaint up to 5 times, each launch bounded by `timeout_s`.
 
     Returns {"ok": bool, "output_project": str | None, "iou": float | None,
     "retention": float | None, "warnings": [str] | None, "error": str | None}."""

@@ -73,8 +73,9 @@ MeshTriage, and MeshTriage's scope is unaffected by this pivot.
 Items 1-7 shipped as Phase 5 (2026-09-16, see docs/PLAN.md and STATUS.md) — every
 one of them was already empirically de-risked going in, unlike the rest of v1's
 phases, which each needed their own hands-on investigation before implementation
-could start. Items 8-10 are scoped into a **draft** Phase 6 in docs/PLAN.md
-(2026-09-27, source-read only, not approved). It found item 8 composes today
+could start. Items 8 and 10 shipped as Phase 6 (2026-09-27, approved via grill decisions
+D1-D5; gate green in STATUS.md) as `replace_mesh` and `check_mesh_uvs`, and
+item 9 was split into Phase 7. Phase 6's source read found item 8 composes today
 with no patch (`script_append_mesh` + `script_object_remove`), and item 9's
 "no accessor" blocker was wrong (`object_t.ext` is reachable from minic). Item
 10 is best done Python-side on `script_export_mesh`.
@@ -144,7 +145,7 @@ corrupted, fixed 0/10 + 0/10.
   at or after `01bae6c5` (which renamed `plugin_uv_unwrap_button` to
   `util_mesh_uv_unwrap`, the name this project now calls; STATUS.md Known
   Issue #6), plus the zero-init commit above for reliable
-  `smooth_mesh`/`bevel_mesh` until #2148 lands. `--check`'s "mesh-edit patch"
+  `smooth_mesh`/`bevel_mesh` until #2148 lands. `--check`'s "minic API"
   preflight (`src/armorpaint_mcp/doctor.py`) catches an older build with a
   clear error instead of a silent "function not found" minic failure. Since
   2026-09-27 the local `AP_BINARY` is built from the checkout's

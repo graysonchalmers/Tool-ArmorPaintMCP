@@ -177,12 +177,12 @@ itself, and only after the result verifies.
     asset/shader export from `make.bat`) next to it or it access-violates on
     launch with zero log output. Copy the exe into `paint\build\out\` and
     run it from there.
-- **Mesh/UV editing tools need a recent build.** 7 of the 12 shipped tools
+- **Mesh/UV editing tools need a recent build.** 7 of the 14 shipped tools
   (`decimate_mesh`, `bevel_mesh`, `subdivide_mesh`, `smooth_mesh`,
   `duplicate_mesh`, `merge_mesh_geometry`, `unwrap_mesh_uvs` -- the Phase 5
   tools) need upstream `main` at or after `01bae6c5` (2026-09-17: the
   registrations from #2139, with the UV unwrap one renamed to
-  `util_mesh_uv_unwrap`). `ap-mcp --check` reports a clear "mesh-edit patch"
+  `util_mesh_uv_unwrap`). `ap-mcp --check` reports a clear "minic API"
   failure on an older build.
   - **Known upstream bug:** on stock upstream, `smooth_mesh` and `bevel_mesh`
     intermittently return corrupted geometry (uninitialized accumulator
