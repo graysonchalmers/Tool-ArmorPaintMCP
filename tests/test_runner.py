@@ -14,6 +14,7 @@ from armorpaint_mcp.runner import (
     run_api,
     run_minic_script,
     run_procedural_material,
+    script_error_lines,
 )
 
 # The two real presets these tests lean on, copied from an actual ArmorPaint
@@ -673,3 +674,45 @@ def test_run_minic_script_reports_timeout(tmp_path):
 
     assert result.ok is False
     assert "timed out after 5.0s" in result.error
+
+
+def test_script_error_lines_finds_minic_errors_in_any_stream():
+    out = "SPIKE_MARKER\n<script>:2: error: unknown function 'nope' (got '(')\n"
+    err = "<script>:3: error: null pointer access on 'object_t->name' (got ';')\n"
+    assert script_error_lines(out, err) == [
+        "<script>:2: error: unknown function 'nope' (got '(')",
+        "<script>:3: error: null pointer access on 'object_t->name' (got ';')",
+    ]
+
+
+def test_script_error_lines_ignores_ordinary_output():
+    assert script_error_lines("Project saved\nerror: not at line start? no\n", "") == []
+
+
+def test_run_minic_script_fails_on_a_script_error_despite_exit_0(tmp_path):
+    binary = tmp_path / "ArmorPaint.exe"
+    binary.write_text("")
+    project = tmp_path / "project.arm"
+    project.write_text("")
+    line = "<script>:2: error: unknown function 'this_is_undefined_q' (got '(')"
+
+    with patch("armorpaint_mcp.runner.subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0, stdout=line + "\n", stderr="")
+        result = run_minic_script(str(binary), str(project), "void main() {}")
+
+    assert result.ok is False
+    assert result.error == f"script error: {line}"
+    assert result.stdout == line + "\n"
+
+
+def test_run_minic_script_decodes_undecodable_output_without_raising(tmp_path):
+    binary = tmp_path / "ArmorPaint.exe"
+    binary.write_text("")
+    project = tmp_path / "project.arm"
+    project.write_text("")
+
+    with patch("armorpaint_mcp.runner.subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        run_minic_script(str(binary), str(project), "void main() {}")
+
+    assert mock_run.call_args.kwargs.get("errors") == "replace"

@@ -60,13 +60,13 @@ def _run_mesh_edit(project: str, minic_call: str, output_project: str | None,
     the caller's own file unless `in_place=True`), run `minic_call` followed
     by project_save(0) against that target, and report the outcome.
 
-    ok=True proves only that the ArmorPaint process completed and
-    project_save(0) ran -- same caveat as run_script and every other minic
-    call in this project (see run_script's docstring). `minic_call` here is
-    always one of this project's own, already-verified function calls
-    (never caller-supplied text), so the practical risk is much narrower
-    than run_script's arbitrary-script case, but the underlying guarantee
-    is identical.
+    ok=True means the process exited 0 and printed no minic error line --
+    same caveat as run_script (see its docstring): still not proof the edit
+    actually landed (e.g. that project_save(0) ran to completion).
+    `minic_call` here is always one of this project's own, already-verified
+    function calls (never caller-supplied text), so the practical risk is
+    much narrower than run_script's arbitrary-script case, but the
+    underlying guarantee is identical.
 
     Returns {"ok": bool, "output_project": str | None, "error": str | None}."""
     cfg = _ensure_ready()
@@ -533,21 +533,18 @@ def run_script(project: str, script: str, timeout_s: float = DEFAULT_TIMEOUT_S) 
     about the project's current state, back it up yourself before calling
     this with a script you haven't fully reviewed.
 
-    IMPORTANT: ArmorPaint gives no diagnostic signal for a script runtime
-    error (confirmed empirically -- calling an undefined function exits 0
-    with empty output, identical to success). ok=True here means only "the
-    ArmorPaint process completed", not "the script did what you expected" --
-    verify results yourself (e.g. check that expected output files appeared,
-    or call inspect_project afterward). The `project` path is bounded by
-    AP_ALLOWED_ROOTS when set; the script body itself is not sandboxed and
-    can read/write anywhere the ArmorPaint process has OS-level permission
-    to.
+    A minic script error (unknown function, bad field, null pointer, syntax
+    error) returns ok=False with the "<script>:N: error: ..." line(s) in
+    `error` -- the process itself exits 0 either way. ok=True means the
+    process finished and printed no script error; it is still not proof the
+    script did what you meant (a script that returns early prints nothing),
+    so verify results yourself (e.g. call inspect_project afterward). The
+    `project` path is bounded by AP_ALLOWED_ROOTS when set; the script body
+    itself is not sandboxed and can read/write anywhere the ArmorPaint
+    process has OS-level permission to.
 
-    NOTE: ArmorPaint's script-facing console output (console_log() and
-    friends) writes directly to the console handle (WriteConsoleW), which is
-    not captured by this tool's subprocess piping on this platform -- in
-    practice `stdout`/`stderr` are typically empty even on a fully
-    successful run. Don't rely on them as a diagnostic channel.
+    `stdout`/`stderr` carry the script's console_log()/printf output and
+    ArmorPaint's own messages (e.g. "Project saved").
 
     `timeout_s` (default 30s) bounds how long the ArmorPaint process is
     allowed to run before this call gives up and reports an uncertain

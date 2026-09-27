@@ -25,6 +25,7 @@ fingerprinted (size + mtime) before launch and must *change* to count.
 import glob
 import json
 import os
+import re
 import subprocess
 import tempfile
 import time
@@ -90,6 +91,20 @@ class ScriptResult:
     error: str | None = None
 
 
+# minic reports a runtime/compile error as "<script>:<line>: error: <msg>" and
+# then carries on (an error only unwinds its own frame) -- the process still
+# exits 0. Since upstream 3b77ab8c (2026-09-17) iron_log writes to a pipe via
+# WriteFile, so these lines reach subprocess capture: INFO on stdout, errors
+# possibly on stderr (base/sources/iron_system.c:44-54). Phase 6 spike S2.
+_SCRIPT_ERROR_RE = re.compile(r"^<script>:\d+: error: .*$", re.MULTILINE)
+
+
+def script_error_lines(*streams: str) -> list[str]:
+    """Every minic error line in `streams`, in order."""
+    return [m.group(0).rstrip("\r") for s in streams if s
+            for m in _SCRIPT_ERROR_RE.finditer(s)]
+
+
 def run_minic_script(binary: str, project: str, script_text: str,
                      timeout_s: float = DEFAULT_TIMEOUT_S) -> ScriptResult:
     """Run `script_text` (minic/.c source) against `project` via ArmorPaint's
@@ -107,15 +122,13 @@ def run_minic_script(binary: str, project: str, script_text: str,
     scheduled a full frame after minic_eval() has already returned -- see
     paint/sources/args.c's args_run_script/args_run_script_stop.
 
-    IMPORTANT: minic gives no diagnostic signal for a script runtime error --
-    confirmed empirically that calling an undefined function exits 0 with
-    empty stdout/stderr, identical to a script that ran perfectly (the same
-    kind of minic silent-failure Phase 2's spiking found for curated struct
-    access -- see the design spec's Amendment 2). So ok=True here means only
-    "the ArmorPaint process completed" -- it is NOT proof the script did what
-    it was supposed to do. Callers should verify results independently (e.g.
-    check that expected output files appeared, or call inspect_project
-    afterward).
+    A minic script error (unknown function, missing struct field, null
+    pointer, syntax error) does NOT change the exit code, but it does print
+    "<script>:N: error: ..." -- this function turns any such line (stdout or
+    stderr) into ok=False. ok=True therefore means "the process exited 0 and
+    printed no script error", which still isn't proof the script did what
+    its author wanted (an early `return` prints nothing): tools that save
+    also verify their output file exists (see server._run_saving_script).
 
     Never raises for a normal script-didn't-work failure -- that's
     ScriptResult(ok=False, ...)."""
@@ -128,6 +141,7 @@ def run_minic_script(binary: str, project: str, script_text: str,
             proc = subprocess.run(
                 [binary, project, "--background", "--script", script_path],
                 capture_output=True, text=True, timeout=timeout_s,
+                errors="replace",
             )
         except subprocess.TimeoutExpired:
             return ScriptResult(ok=False, stdout="", stderr="", error=(
@@ -140,6 +154,10 @@ def run_minic_script(binary: str, project: str, script_text: str,
         detail = f": {proc.stderr.strip()}" if proc.stderr and proc.stderr.strip() else ""
         return ScriptResult(ok=False, stdout=proc.stdout, stderr=proc.stderr,
                             error=f"'--script' exited {proc.returncode}{detail}")
+    errors = script_error_lines(proc.stdout, proc.stderr)
+    if errors:
+        return ScriptResult(ok=False, stdout=proc.stdout, stderr=proc.stderr,
+                            error="script error: " + "; ".join(errors))
     return ScriptResult(ok=True, stdout=proc.stdout, stderr=proc.stderr)
 
 
