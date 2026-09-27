@@ -6,7 +6,10 @@
 **Last updated:** 2026-09-27
 **Open phase:** **Phase 6, approved 2026-09-27** (rename hardening, ROADMAP
 item 10 UV check, item 8 mesh replace; no ArmorPaint C change). Spikes S1-S5
-first, then 6.1 → 6.2 → 6.3 (`docs/PLAN.md`). 6.0 (re-baseline on current
+done; executing the 11-task plan
+(`docs/superpowers/plans/2026-09-27-phase6-hardening-uv-replace.md`) on branch
+`claude/phase6`. Task 1 implemented (`9070a14`), in review fix round 1. Nothing
+in Phase 6 is ✅ until its gate runs. 6.0 (re-baseline on current
 upstream) is done, as Known Issue #6. Phase 7 (three upstream C changes +
 item 9 targeted merge) stays a draft, not approved, until Phase 6's gate is
 green.
