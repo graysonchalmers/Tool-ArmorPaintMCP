@@ -1,0 +1,232 @@
+{
+  "base": {
+    "file": "base.obj",
+    "verts": 1580,
+    "faces": 1642,
+    "tris": 3148,
+    "uv_layer": true,
+    "uv_islands_blender": 24
+  },
+  "base_tri": {
+    "file": "base_tri.obj",
+    "verts": 1580,
+    "faces": 1642,
+    "tris": 3148,
+    "uv_layer": true,
+    "uv_islands_blender": 24
+  },
+  "base_fbx": {
+    "file": "base.fbx",
+    "note": "Blender FBX exporter, use_selection, UVs included"
+  },
+  "base_blend": {
+    "file": "base.blend",
+    "note": "saved right after unwrap; only object = Base"
+  },
+  "nouv": {
+    "file": "nouv.obj",
+    "verts": 1580,
+    "faces": 1642,
+    "tris": 3148,
+    "uv_layer": false,
+    "uv_islands_blender": null
+  },
+  "r1_noise": {
+    "file": "r1_noise.obj",
+    "verts": 1580,
+    "faces": 1642,
+    "tris": 3148,
+    "uv_layer": true,
+    "uv_islands_blender": 24,
+    "note": "every vertex += uniform(-0.03,0.03)^3, seed 1234; UVs untouched"
+  },
+  "r2_subdiv": {
+    "file": "r2_subdiv.obj",
+    "verts": 6212,
+    "faces": 6562,
+    "tris": 12412,
+    "uv_layer": true,
+    "uv_islands_blender": 24,
+    "note": "mesh.subdivide number_cuts=1 on all faces (flat, UVs interpolated)"
+  },
+  "r3_bevel": {
+    "file": "r3_bevel.obj",
+    "verts": 1676,
+    "faces": 1738,
+    "tris": 3340,
+    "uv_layer": true,
+    "uv_islands_blender": 24,
+    "note": "mesh.bevel offset 0.08 segments 2 on 48 cylinder top-rim edges"
+  },
+  "r4_extrude": {
+    "file": "r4_extrude.obj",
+    "verts": 1588,
+    "faces": 1650,
+    "tris": 3164,
+    "uv_layer": true,
+    "uv_islands_blender": 24,
+    "note": "bmesh extrude_face_region of 4 front faces (source faces deleted, as the E key does), moved -0.2 in Y"
+  },
+  "r5_decimate": {
+    "file": "r5_decimate.obj",
+    "verts": 793,
+    "faces": 1063,
+    "tris": 1574,
+    "uv_layer": true,
+    "uv_islands_blender": 30,
+    "note": "Decimate modifier COLLAPSE ratio 0.5, triangulate off, applied (delimit n/a to collapse)"
+  },
+  "r6_subsurf": {
+    "file": "r6_subsurf.obj",
+    "verts": 6438,
+    "faces": 6432,
+    "tris": 12864,
+    "uv_layer": true,
+    "uv_islands_blender": 24,
+    "note": "Subsurf level 1, uv_smooth=PRESERVE_BOUNDARIES, applied"
+  },
+  "r5b_decimate_heavy": {
+    "file": "r5b_decimate_heavy.obj",
+    "verts": 320,
+    "faces": 540,
+    "tris": 628,
+    "uv_layer": true,
+    "uv_islands_blender": 39,
+    "note": "Decimate COLLAPSE ratio 0.2, applied"
+  },
+  "r6b_subsurf_smoothall": {
+    "file": "r6b_subsurf_smoothall.obj",
+    "verts": 6438,
+    "faces": 6432,
+    "tris": 12864,
+    "uv_layer": true,
+    "uv_islands_blender": 24,
+    "note": "Subsurf level 1, uv_smooth=SMOOTH_ALL (boundaries smoothed too), applied"
+  },
+  "r7_bigmove": {
+    "file": "r7_bigmove.obj",
+    "verts": 1580,
+    "faces": 1642,
+    "tris": 3148,
+    "uv_layer": true,
+    "uv_islands_blender": 24,
+    "note": "1059 sphere-knob verts moved +0.6 in X (~13% of bbox diag); UVs untouched"
+  },
+  "r8_scaled": {
+    "file": "r8_scaled.obj",
+    "verts": 1580,
+    "faces": 1642,
+    "tris": 3148,
+    "uv_layer": true,
+    "uv_islands_blender": 24,
+    "note": "all verts *1.25 then +0.5 X, -0.3 Z (mesh data, UVs untouched)"
+  },
+  "d6_repack_norot": {
+    "file": "d6_repack_norot.obj",
+    "verts": 1580,
+    "faces": 1642,
+    "tris": 3148,
+    "uv_layer": true,
+    "uv_islands_blender": 24,
+    "note": "uv.pack_islands rotate off, margin 0.02, shape CONCAVE"
+  },
+  "d1_smartuv45": {
+    "file": "d1_smartuv45.obj",
+    "verts": 1580,
+    "faces": 1642,
+    "tris": 3148,
+    "uv_layer": true,
+    "uv_islands_blender": 38,
+    "note": "Smart UV Project angle 45, margin 0.05"
+  },
+  "d2a_lightmap": {
+    "file": "d2a_lightmap.obj",
+    "verts": 1580,
+    "faces": 1642,
+    "tris": 3148,
+    "uv_layer": true,
+    "uv_islands_blender": 1642,
+    "note": "uv.lightmap_pack all faces, margin 0.1"
+  },
+  "d2b_cube": {
+    "file": "d2b_cube.obj",
+    "verts": 1580,
+    "faces": 1642,
+    "tris": 3148,
+    "uv_layer": true,
+    "uv_islands_blender": 36,
+    "note": "uv.cube_project cube_size 2, scale_to_bounds"
+  },
+  "d3_repack": {
+    "file": "d3_repack.obj",
+    "verts": 1580,
+    "faces": 1642,
+    "tris": 3148,
+    "uv_layer": true,
+    "uv_islands_blender": 24,
+    "note": "uv.pack_islands rotate ANY, margin 0.005, shape CONCAVE (island shapes kept, rearranged)"
+  },
+  "d4_swap": {
+    "file": "d4_swap.obj",
+    "verts": 1580,
+    "faces": 1642,
+    "tris": 3148,
+    "uv_layer": true,
+    "uv_islands_blender": 24,
+    "note": "bmesh: swap bbox centres of two islands; {\"congruent_pair_found\": true, \"islands\": 24, \"swapped_faces\": [62, 62], \"swapped_uv_area\": [0.081208, 0.081208], \"swapped_bbox\": [[0.2832, 0.2973], [0.2832, 0.2973]], \"offset\": [0.2976, 0.0]}"
+  },
+  "d5_rot180": {
+    "file": "d5_rot180.obj",
+    "verts": 1580,
+    "faces": 1642,
+    "tris": 3148,
+    "uv_layer": true,
+    "uv_islands_blender": 24,
+    "note": "all UVs (u,v) -> (1-u, 1-v)"
+  },
+  "sphere": {
+    "file": "sphere.obj",
+    "verts": 482,
+    "faces": 512,
+    "tris": 960,
+    "uv_layer": true,
+    "uv_islands_blender": 1
+  },
+  "sphere_r1_noise": {
+    "file": "sphere_r1_noise.obj",
+    "verts": 482,
+    "faces": 512,
+    "tris": 960,
+    "uv_layer": true,
+    "uv_islands_blender": 1,
+    "note": "every vertex += uniform(-0.02,0.02)^3, seed 1234"
+  },
+  "sphere_d_mirror": {
+    "file": "sphere_d_mirror.obj",
+    "verts": 482,
+    "faces": 512,
+    "tris": 960,
+    "uv_layer": true,
+    "uv_islands_blender": 1,
+    "note": "u -> 1-u (mirror)"
+  },
+  "sphere_d_rot180": {
+    "file": "sphere_d_rot180.obj",
+    "verts": 482,
+    "faces": 512,
+    "tris": 960,
+    "uv_layer": true,
+    "uv_islands_blender": 1,
+    "note": "(u,v) -> (1-u,1-v)"
+  },
+  "sphere_d_smartuv": {
+    "file": "sphere_d_smartuv.obj",
+    "verts": 482,
+    "faces": 512,
+    "tris": 960,
+    "uv_layer": true,
+    "uv_islands_blender": 6,
+    "note": "Smart UV Project 66/0.02 on the sphere"
+  },
+  "_blender_version": "5.1.1"
+}
