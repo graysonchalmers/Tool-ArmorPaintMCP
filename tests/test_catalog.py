@@ -143,3 +143,17 @@ def test_mesh_edit_patch_missing_reports_only_the_absent_ones():
     assert "util_mesh_smooth" not in missing
     assert "util_mesh_bevel" in missing
     assert len(missing) == 5
+
+
+def test_extract_project_state_keeps_windows_backslash_paths_literal():
+    """ArmorPaint's armpack_to_json_value writes strings with NO escaping
+    (base/sources/iron_armpack.c:799-801), so every backslash in the dump is
+    a literal character, never a JSON escape (Known Issue #10)."""
+    api_text = ('/* Current project state:\n'
+                '{"mesh_assets": ["C:\\Users\\x\\tmp\\new\\grid.obj"], "n": 1}'
+                '\n\nScene objects in world space\n*/\n')
+
+    state = extract_project_state(api_text)
+
+    assert state["mesh_assets"] == ["C:\\Users\\x\\tmp\\new\\grid.obj"]
+    assert state["n"] == 1

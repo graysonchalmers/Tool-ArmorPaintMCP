@@ -39,7 +39,12 @@ def extract_project_state(api_text: str) -> dict:
             "'--api' output's project state block has no terminating "
             "'Scene objects in world space' section -- unexpected output shape")
     try:
-        return json.loads(api_text[start:end])
+        # armpack_to_json_value (base/sources/iron_armpack.c:799-801) writes
+        # strings as "%s" with no escaping, so a backslash here is always a
+        # literal character (a Windows path), never a JSON escape: double
+        # every one. A '"' inside a name would still break the parse -- a
+        # documented limitation (Known Issue #10), not fixable from here.
+        return json.loads(api_text[start:end].replace("\\", "\\\\"))
     except json.JSONDecodeError as exc:
         raise CatalogError(f"project state block is not valid JSON: {exc}") from exc
 
