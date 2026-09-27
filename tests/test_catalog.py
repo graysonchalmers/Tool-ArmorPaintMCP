@@ -64,6 +64,10 @@ def _captured_scripts(tmp_path) -> list[str]:
     # merge_mesh_geometry runs run_api first; its minic call is the same shape
     scripts += captured + [server._save_script(["util_mesh_merge_geometry();"],
                                                str(tmp_path / "f.arm"))]
+
+    from armorpaint_mcp import replace as rp
+    scripts += [rp.build_replace_script("Cone", str(tmp_path / "g.obj"), str(tmp_path / "f.arm"), "MatB"),
+                rp.build_replace_script("Cone", str(tmp_path / "g.obj"), str(tmp_path / "f.arm"), None)]
     return scripts
 
 SAMPLE_API_TEXT = '''\

@@ -148,6 +148,13 @@ EMITTED_MINIC_FUNCTIONS = (
     "project_filepath_set", "project_save",
     # check_mesh_uvs / replace_mesh verification exports
     "script_export_mesh",
+    # replace_mesh (replace.build_replace_script)
+    "script_get_object", "string_copy", "script_object_set_name",
+    "script_get_context", "script_append_mesh", "object_set_parent",
+    "script_object_remove", "transform_build_matrix", "script_get_material",
+    "string_array_create", "string_array_push", "i32_to_string",
+    "string_equals", "string_array_join", "script_object_set_material",
+    "console_log",
 )
 
 
