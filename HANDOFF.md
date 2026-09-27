@@ -1,100 +1,79 @@
 # 🧭 Session Handoff — Tool-ArmorPaintMCP
 
-_Last updated: 2026-09-27 18:10 CT (wrap-up)_
+_Last updated: 2026-09-27 (pickup session: upstream sync)_
 
 > The baton. Written by `wrap-up` at session end, read by `pickup` at session start.
 
 ## 🎯 Current state
 
-v1 (5 tools) + Phase 5 (7 mesh/UV editing tools) shipped. The `smooth_mesh`/
-`bevel_mesh` accumulator-corruption bug (STATUS.md Known Issues #4/#5) is
-now **fixed**, not just root-caused: zero-init for `util_mesh_smooth`/
-`util_mesh_bevel`/`util_mesh_calc_normals`'s accumulator arrays landed in
-the ArmorPaint checkout, verified via a 10-run repro (4/10 and 8/10
-corrupted pre-fix → 0/10 for both post-fix) plus a full regression sweep
-(122 unit + 18 integration + 13/13 smoke, no regressions). The near-zero-
-component scan that caught it is now permanent regression coverage in
-`test_smooth_mesh_integration.py`/`test_bevel_mesh_integration.py`.
+v1 (5 tools) + Phase 5 (7 mesh/UV editing tools) shipped and green on a
+build of **current upstream ArmorPaint**:
+- The 7-function registration patch is upstream, merged 2026-09-17 as
+  [armory3d/armorpaint#2139](https://github.com/armory3d/armorpaint/pull/2139)
+  (`ee2f3635`).
+- Upstream then renamed `plugin_uv_unwrap_button` to `util_mesh_uv_unwrap`
+  (`01bae6c5`). The project now calls the new name (STATUS.md Known Issue #6,
+  closed), so it **requires a build from `01bae6c5` on**.
+- The smooth/bevel/normals zero-init fix is open upstream as
+  [armory3d/armorpaint#2148](https://github.com/armory3d/armorpaint/pull/2148):
+  11 `memset` lines, one file. 10-run repro on upstream `main` `85f6cf1c`:
+  stock 3/10 smooth + 9/10 bevel corrupted, fixed 0/10 + 0/10.
+- The ArmorPaint checkout is on `fix/mesh-accumulator-zero-init` at
+  `287e63f4` (upstream `main` `85f6cf1c` + that fix), pushed to `gc-fork`.
+  `AP_BINARY` was built from it 2026-09-27.
+- On that build: `pytest -q` 122 passed, `-m integration` 18 passed, smoke
+  13/13, `--check` green. `spike/minic-decimate` is superseded.
 
-The ArmorPaint checkout (`C:\Projects-local\z-Git\ArmorPaint`) carries both
-patches on one branch now: `spike/minic-decimate` at `e246089d` (fast-
-forward-merged this session from the now-deleted `fix/mesh-accumulator-
-zero-init`) — `2b528475` (registration-only, upstream PR #2139) and
-`e246089d` (the algorithm fix) stay separately diffable for two future
-PRs. A `gc-fork` remote (`graysonchalmers/armorpaint`) exists alongside
-`origin` for that.
-
-**Correction (2026-09-27 pickup):** upstream PR
-[#2139](https://github.com/armory3d/armorpaint/pull/2139) was **merged
-2026-09-17** (`ee2f3635`), not open. `spike/minic-decimate` is also already
-on `gc-fork`. Upstream then renamed `plugin_uv_unwrap_button` to
-`util_mesh_uv_unwrap` (`01bae6c5`), STATUS.md Known Issue #6.
+Phase 6 (ROADMAP items 8-10) is in `docs/PLAN.md` as **DRAFT, not approved**,
+source-read only. Its 6.0 prerequisite (re-baseline) is done.
 
 ## 📌 Where we stopped
 
-`main` pushed and in sync with `origin/main` (confirmed `0  0`). Working
-tree clean. Nothing mid-flight. The ArmorPaint checkout's `spike/minic-
-decimate` is unpushed (no separate yes given yet for pushing that branch
-anywhere — `origin` is upstream `armory3d/armorpaint`, `gc-fork` is
-Grayson's own fork).
+Local `main` was fast-forwarded to this session's commits and is **ahead of
+`origin/main`, not pushed**. The worktree `claude/pickup-4c87f9` holds the
+same commits.
 
 ## ▶️ Next concrete step
 
-**Decide on upstreaming.** Two independent options, neither urgent:
-- Wait for upstream review on #2139 (registration-only patch) — nothing to
-  do until a maintainer responds.
-- Decide whether/when to open a second PR for the `e246089d` algorithm fix
-  (zero-init), and whether it goes through `gc-fork` first or straight to
-  `origin`.
-
-Other open items, still none urgent:
-- ROADMAP.md items 8-10 (non-destructive mesh replace, targeted 2-object
-  merge, UV validity check) — none scoped into a phase yet.
-- `.claude\worktrees\mesh-uv-visual-gallery` — still `Device or resource
-  busy`, 4 sessions running now. `git worktree list` doesn't even see it
-  anymore (unregistered), so `Clear-MergedWorktrees.ps1` silently no-ops on
-  it. Probably needs a reboot or Sysinternals `handle.exe`, not another
-  retry from inside a session.
-- `origin/claude/mystifying-banach-e42a6d` on GitHub — merged locally weeks
-  ago, never deleted on the remote (needs its own separate yes, still not
-  given).
+1. Push `main` (Grayson's "ship it" / wrap-up), then retire the
+   `pickup-4c87f9` worktree (root CLAUDE.md rule 10).
+2. Watch #2148. When it merges, rebuild `AP_BINARY` from plain upstream
+   `main` and retire the local `fix/mesh-accumulator-zero-init` branch.
+3. Grayson answers Phase 6 decisions D2-D5 in `docs/PLAN.md`, then approve
+   or trim the draft before any Phase 6 work.
 
 ## ❓ Open questions
 
-- Whether `util_mesh_calc_normals(true)`'s zero-init fix (which covers all
-  4 of its call sites at once) fully retires the "does it corrupt normals
-  elsewhere" question, or whether one of the other 3 call sites
-  (`util_mesh.c:1100`, `1503`, `1633`) still deserves its own targeted
-  verification — leaning toward "retired," not empirically re-checked
-  against those specific tools' outputs this session.
-- Whether `decimate_mesh`'s unrelated-looking gallery symptom (no visible
-  change in a wireframe render despite a real numeric vertex/face drop)
-  shares any root cause with #4/#5 — it doesn't call any of the three fixed
-  functions, so probably not, still not empirically ruled out.
-- Live mode (deferred, not rejected) — untouched, unchanged for weeks.
-- The parked `_failure()` key-set assertion gap (2 of 10 call sites) —
-  still open, unrelated, worth its own tiny task.
-- Design spec's own Amendment 3 prose still says "6 of 7 functions
-  patched" (cosmetic).
-- `merge_mesh_geometry`'s docstring still has no general "ok=True proves
-  only completion" caveat — one sentence, trivial whenever `server.py` is
-  next open.
+- Phase 6 decisions:
+  - D2: item 9's C change, upstream-first or local.
+  - D3: future registrations straight upstream by default?
+  - D4: item 8 replace semantics.
+  - D5: upstream the layer-mask remap on delete.
+- D1 was pinned for now; the maintainer warned of more script-API renames.
+  After any `AP_BINARY` rebuild, diff `--api` and run `--check` +
+  integration. An undefined minic call still exits 0 with `ok=True`.
+- `decimate_mesh`'s gallery symptom (no visible change despite real count
+  drop): still not ruled in or out.
+- Parked small items:
+  - the `_failure()` key-set assertion gap (2 of 10 call sites);
+  - spec Amendment 3's "6 of 7 functions patched" prose;
+  - `merge_mesh_geometry`'s docstring still lacks the "ok=True proves only
+    completion" caveat.
+- Live mode: deferred, unchanged.
 
 ## 🗂️ Changed this session
 
-- Branch: `main` · Pushed the two commits a 2026-09-23 Skills-Core session
-  had deliberately left unpushed (`cdf3985` — the Known Issue #4/#5 fix
-  itself, `bd8d2da` — `build_stamp.py` UTF-8/full-stamp fix, unrelated),
-  plus this session's `HANDOFF.md`/`CLAUDE.md` update. `origin/main`
-  confirmed in sync (`0  0`).
-- ArmorPaint checkout: fast-forward-merged `fix/mesh-accumulator-zero-init`
-  into `spike/minic-decimate` (`e246089d`), deleted the now-redundant
-  branch. No rewrite — both commits still individually diffable.
-- Decision (+ why): merged the two ArmorPaint branches into one rather than
-  leaving them diverged, since the fix branch was a strict, one-commit-
-  ahead descendant (trivial fast-forward) and a single coherent build
-  branch is less error-prone going forward than two branch names pointing
-  at nearly-the-same-but-not-quite state.
+- `a27eb28`: doc drift fixed (#2139 merged, not open). Known Issue #6
+  logged. `doctor.py`'s mesh-edit message no longer claims "stock
+  ArmorPaint".
+- `dd84a32`: switched to `util_mesh_uv_unwrap`. Phase 6 draft added.
+  ROADMAP rows 8-10 + STATUS open-phase point at it.
+- ArmorPaint checkout: new branch `fix/mesh-accumulator-zero-init`
+  (`287e63f4`), pushed to `gc-fork`, PR #2148 opened. Rebuilt `AP_BINARY`
+  (old exe + `data\` backed up in the session scratchpad only).
+- Deleted the merged remote branch `origin/claude/mystifying-banach-e42a6d`.
+  Moved the empty stuck `.claude\worktrees\mesh-uv-visual-gallery` to
+  `_to_delete\worktrees\`.
 
 ---
 📜 Full session history: `handoff-log/` (one dated file per session, oldest to newest)
