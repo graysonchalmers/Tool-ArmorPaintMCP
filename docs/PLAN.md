@@ -351,6 +351,40 @@ claims read in source; the `inspect_project` failure reproduced.
   regenerate them in CI.** Quantization was emulated, not run.
 - **S4/S5:** see "Carry-over" and "Script shape" above. GLB appends natively
   (within 3.0e-5); FBX at 100x; `.blend` no-ops with the config unset.
+- **Real-ArmorPaint calibration (Task 10, 2026-09-27)**: `scripts/calibrate_uv_gate.py`
+  run against real ArmorPaint import/export (not S3's emulated quantization),
+  one-object projects built from `tests/fixtures/phase6/uv/base.obj` and
+  `sphere.obj`, every committed variant replaced in `swap` mode:
+  ```
+  variant                        iou retention  gate(round_trip)
+  r1_noise                    1.0000    1.0000  pass
+  r2_subdiv                   1.0000    1.0000  pass
+  r3_bevel                    0.9999    0.9999  pass
+  r4_extrude                 FAILED: the replacement's UVs are invalid: UV-degenerate triangles cover 4.1382% of the surface (limit 0.1%): paint can't land there (IoU None, retention None)
+  r5_decimate                 0.9987    0.9988  pass
+  r5b_decimate_heavy          0.9825    0.9779  pass
+  r6b_subsurf_smoothall       0.9919    0.9941  pass
+  r7_bigmove                  1.0000    0.9070  pass
+  r8_scaled                   1.0000    1.0000  pass
+  d1_smartuv45                0.4330    0.0060  FAIL
+  d2a_lightmap                0.5974    0.0024  FAIL
+  d2b_cube                    0.5916    0.0000  FAIL
+  d3_repack                   0.7642    0.3755  FAIL
+  d4_swap                     0.9963    0.7385  FAIL
+  d5_rot180                   0.3591    0.0013  FAIL
+  d6_repack_norot             0.9910    0.6415  FAIL
+  d7_smartuv_rerun            0.9980    0.9750  pass
+  sphere_r1_noise             1.0000    1.0000  pass
+  sphere_d_mirror             1.0000    0.1254  FAIL
+  sphere_d_rot180             1.0000    0.0025  FAIL
+  sphere_d_smartuv            0.5179    0.0010  FAIL
+  ```
+  Every `r*`/`sphere_r1_noise` row `pass`, every `d1`-`d6`/`sphere_d_*` row
+  `FAIL`, `d7` `pass`, and `r4_extrude` fails pre-gate on the zero-area rule
+  (4.1382%, matching docs/PLAN.md 6.2's documented consequence) -- exactly
+  the expected table, so the S3 gap (worst round trip 0.907 vs worst scramble
+  0.7385, now reproduced verbatim by `d4_swap`'s retention) held on real
+  ArmorPaint exports and no threshold moved.
 
 **Fixtures:** an objects-fixture generator (`script_project_new` + cone +
 torus, one object with a material override and a non-identity transform,
