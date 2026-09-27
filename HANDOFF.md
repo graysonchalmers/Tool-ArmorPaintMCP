@@ -1,6 +1,6 @@
 # 🧭 Session Handoff — Tool-ArmorPaintMCP
 
-_Last updated: 2026-09-27 (pickup session: upstream sync)_
+_Last updated: 2026-09-27 08:30 CDT (wrap-up: upstream sync session)_
 
 > The baton. Written by `wrap-up` at session end, read by `pickup` at session start.
 
@@ -29,17 +29,15 @@ source-read only. Its 6.0 prerequisite (re-baseline) is done.
 
 ## 📌 Where we stopped
 
-Local `main` was fast-forwarded to this session's commits and is **ahead of
-`origin/main`, not pushed**. The worktree `claude/pickup-4c87f9` holds the
-same commits.
+Session's commits merged (fast-forward) into `main` and pushed; `origin/main`
+in sync. Nothing mid-flight. The `pickup-4c87f9` worktree (the session's own,
+app-owned) is fully merged and can be retired once the session closes.
 
 ## ▶️ Next concrete step
 
-1. Push `main` (Grayson's "ship it" / wrap-up), then retire the
-   `pickup-4c87f9` worktree (root CLAUDE.md rule 10).
-2. Watch #2148. When it merges, rebuild `AP_BINARY` from plain upstream
+1. Watch #2148. When it merges, rebuild `AP_BINARY` from plain upstream
    `main` and retire the local `fix/mesh-accumulator-zero-init` branch.
-3. Grayson answers Phase 6 decisions D2-D5 in `docs/PLAN.md`, then approve
+2. Grayson answers Phase 6 decisions D2-D5 in `docs/PLAN.md`, then approve
    or trim the draft before any Phase 6 work.
 
 ## ❓ Open questions
