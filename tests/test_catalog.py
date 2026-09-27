@@ -5,16 +5,65 @@ real field names and real ENUM option text, shortened for a fast, offline
 unit test. The real end-to-end shape is checked separately by
 tests/test_inspect_project_integration.py against actual ArmorPaint output.
 """
+import re
+from unittest.mock import patch
+
 import pytest
 
+from armorpaint_mcp import server
 from armorpaint_mcp.catalog import (
     CatalogError,
+    EMITTED_MINIC_FUNCTIONS,
     blend_modes,
     extract_project_state,
     layer_blend_modes,
-    mesh_edit_patch_missing,
+    missing_minic_functions,
     scene_objects,
 )
+from armorpaint_mcp.runner import ScriptResult
+from armorpaint_mcp.script_gen import generate_script
+
+_C_KEYWORDS = {"main", "if", "for", "while", "return", "sizeof"}
+
+
+def _called_identifiers(script: str) -> set[str]:
+    """Every `name(` in a minic script, ignoring string literals (a path like
+    'Program Files (x86)' must not register 'Files' as a call)."""
+    without_strings = re.sub(r'"(?:[^"\\]|\\.)*"', '""', script)
+    return set(re.findall(r"\b([A-Za-z_]\w*)\s*\(", without_strings)) - _C_KEYWORDS
+
+
+def _captured_scripts(tmp_path) -> list[str]:
+    """Scripts produced by the REAL builders: every create_procedural_material
+    node type and every mesh-edit tool (run_minic_script patched to capture)."""
+    scripts = [generate_script({"type": t}, str(tmp_path / "Program Files (x86)"))
+               for t in ("checker", "solid", "noise", "voronoi")]
+    project = tmp_path / "p.arm"
+    project.write_bytes(b"x")
+    captured = []
+
+    def capture(binary, project_, script, timeout_s):
+        captured.append(script)
+        return ScriptResult(ok=False, stdout="", stderr="", error="captured")
+
+    calls = [
+        lambda: server.decimate_mesh(str(project), 0.5, str(tmp_path / "o.arm")),
+        lambda: server.bevel_mesh(str(project), 0.1, str(tmp_path / "o.arm")),
+        lambda: server.subdivide_mesh(str(project), str(tmp_path / "o.arm")),
+        lambda: server.smooth_mesh(str(project), str(tmp_path / "o.arm")),
+        lambda: server.duplicate_mesh(str(project), str(tmp_path / "o.arm")),
+        lambda: server.unwrap_mesh_uvs(str(project), str(tmp_path / "o.arm")),
+    ]
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script", side_effect=capture):
+        mock_cfg.return_value.binary = "ArmorPaint.exe"
+        mock_cfg.return_value.allowed_roots = []
+        for call in calls:
+            call()
+    # merge_mesh_geometry runs run_api first; its minic call is the same shape
+    scripts += captured + [server._save_script(["util_mesh_merge_geometry();"],
+                                               str(tmp_path / "f.arm"))]
+    return scripts
 
 SAMPLE_API_TEXT = '''\
 // Material nodes reference:
@@ -113,36 +162,21 @@ def test_layer_blend_modes_has_18_entries_and_no_exclusion():
     assert "Exclusion" not in modes
 
 
-def test_mesh_edit_patch_missing_reports_all_seven_when_none_present():
-    stock_api_text = "// ArmorPaint script API\n\ntypedef struct i8_array_t {\n"
-    missing = mesh_edit_patch_missing(stock_api_text)
-    assert sorted(missing) == sorted([
-        "util_mesh_decimate", "util_mesh_smooth", "util_mesh_bevel",
-        "util_mesh_subdivide", "util_mesh_merge_geometry",
-        "util_mesh_duplicate", "util_mesh_uv_unwrap",
-    ])
+def test_every_emitted_minic_call_is_in_the_registry(tmp_path):
+    called = set().union(*(_called_identifiers(s) for s in _captured_scripts(tmp_path)))
+    assert called <= set(EMITTED_MINIC_FUNCTIONS), sorted(called - set(EMITTED_MINIC_FUNCTIONS))
 
 
-def test_mesh_edit_patch_missing_empty_when_all_present():
-    patched_api_text = (
-        "util_mesh_decimate(f strength)\n"
-        "util_mesh_smooth()\n"
-        "util_mesh_bevel(f amount)\n"
-        "util_mesh_subdivide()\n"
-        "util_mesh_merge_geometry()\n"
-        "util_mesh_duplicate()\n"
-        "util_mesh_uv_unwrap()\n"
-    )
-    assert mesh_edit_patch_missing(patched_api_text) == []
+def test_missing_minic_functions_matches_whole_names_only():
+    api = "void util_mesh_merge_geometry_down(mesh_object_t *a);\nvoid project_save(i32 x);\n"
+    missing = missing_minic_functions(api)
+    assert "util_mesh_merge_geometry" in missing   # a longer name doesn't count
+    assert "project_save" not in missing
 
 
-def test_mesh_edit_patch_missing_reports_only_the_absent_ones():
-    partial = "util_mesh_decimate(f strength)\nutil_mesh_smooth()\n"
-    missing = mesh_edit_patch_missing(partial)
-    assert "util_mesh_decimate" not in missing
-    assert "util_mesh_smooth" not in missing
-    assert "util_mesh_bevel" in missing
-    assert len(missing) == 5
+def test_missing_minic_functions_empty_when_all_declared():
+    api = "\n".join(f"void {n}();" for n in EMITTED_MINIC_FUNCTIONS)
+    assert missing_minic_functions(api) == []
 
 
 def test_extract_project_state_keeps_windows_backslash_paths_literal():
