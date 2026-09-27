@@ -24,8 +24,11 @@ zero-init`) — `2b528475` (registration-only, upstream PR #2139) and
 PRs. A `gc-fork` remote (`graysonchalmers/armorpaint`) exists alongside
 `origin` for that.
 
-Upstream PR [#2139](https://github.com/armory3d/armorpaint/pull/2139) is
-still open, awaiting review, unchanged.
+**Correction (2026-09-27 pickup):** upstream PR
+[#2139](https://github.com/armory3d/armorpaint/pull/2139) was **merged
+2026-09-17** (`ee2f3635`), not open. `spike/minic-decimate` is also already
+on `gc-fork`. Upstream then renamed `plugin_uv_unwrap_button` to
+`util_mesh_uv_unwrap` (`01bae6c5`), STATUS.md Known Issue #6.
 
 ## 📌 Where we stopped
 

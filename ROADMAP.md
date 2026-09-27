@@ -7,7 +7,7 @@
 > [Amendment 3](docs/superpowers/specs/2026-09-15-armorpaint-mcp-design.md#amendment-3-scoped-patch-policy-for-meshuv-2026-09-16)
 > (the patch-policy revision this doc exists because of).
 
-**Last updated:** 2026-09-16 (pivot session)
+**Last updated:** 2026-09-27 (#2139 merged upstream; zero-init PR drafted)
 
 ---
 
@@ -93,37 +93,46 @@ uninitialized heap memory (STATUS.md Known Issues #4/#5). This is a real change
 to an existing function's body, not a registration — a different category than
 the policy above. It's a one-time, narrowly-scoped exception for a confirmed
 correctness bug already blocking two of the seven shipped mesh/UV tools, not a
-reopening of source-patching generally. Lives on branch
-`fix/mesh-accumulator-zero-init` (commit `e246089d`), separate from and doesn't
-touch the registration patch (`2b528475`), so each remains independently
-upstream-able.
+reopening of source-patching generally. Commit `e246089d`, on the ArmorPaint
+checkout's `spike/minic-decimate` (also on `gc-fork`), on top of the
+registration patch `2b528475` but independent of it. **Not yet upstream** as of
+2026-09-27: confirmed from source that upstream `main` (`85f6cf1c`) still has
+the bug (`f32_array_resize` is a bare `realloc`; all three functions still
+`+=` into never-zeroed buffers). A rebased, comment-trimmed version (11
+`memset` lines, one file) is drafted as the second upstream PR, pending a
+build+repro on current upstream `main` before it's opened.
 
 - **Mechanism:** one line per function in `minic_api_list.h`
   (`X0`/`X1`/... macro, matching the C function's real signature) — ArmorPaint's own
   X-macro system in `minic_api.c` auto-generates the calling thunk. No other file
   needs touching when the target C function already exists (contrast: a genuinely
   new C function, like `script_timeline_resume`/`_pause`, needs three files).
-- **Current state:** branch `spike/minic-decimate` in the ArmorPaint checkout,
-  unpushed, one file changed, 7 functions registered and empirically verified.
+- **Current state: upstream.** Merged as
+  [armory3d/armorpaint#2139](https://github.com/armory3d/armorpaint/pull/2139)
+  (merge commit `ee2f3635`, 2026-09-17), so stock upstream `main` now registers
+  all 7 functions. Maintainer's note on merge: the script API "will need a
+  cleanup," so breaking renames may come later (`6c84667a paint: script api
+  cleanup` landed the same day). Originally: branch `spike/minic-decimate`, one
+  file changed, 7 functions registered and empirically verified.
   A further function, `util_mesh_merge_geometry_down` (the GUI's targeted
   "merge with the object below"), was considered and rejected as a one-liner
   -- it needs a new minic accessor for "the other object" that doesn't exist,
   not just a registration (see roadmap item 9); it was never actually
   attempted/registered. Incremental rebuild after the full batch: 2.3s.
-- **Upstream ambition:** Grayson wants to submit this as a PR to
-  `armory3d/armorpaint` — his first open-source contribution. The patch is a strong
-  candidate for that: small, mechanical, every line empirically proven against real
-  geometry, no architectural risk. Before submitting: read the project's actual
-  contribution guidelines (not yet checked), decide whether item 9's dead end
-  belongs in the same PR or a separate follow-up, and give each registration a
-  proper commit message / PR description explaining why each function is safe to
-  expose headlessly.
-- **Until upstream lands (if it does):** Tool-ArmorPaintMCP's own `AP_BINARY` must
-  point at a build carrying this patch, not stock ArmorPaint. This is a new
-  operational dependency the project didn't have before — covered by a
-  `--check` preflight "mesh-edit patch" check (see `src/armorpaint_mcp/doctor.py`),
-  shipped alongside Phase 5's tools, so a caller pointed at an unpatched binary
-  gets a clear error instead of a silent "function not found" minic failure.
+- **Upstream ambition: done.** Grayson's first open-source contribution, merged
+  same day it was opened. Item 9's dead end was left out of it.
+- **Operational dependency now:** `AP_BINARY` must be a build of upstream `main`
+  at or after `ee2f3635`, plus the zero-init commit above for reliable
+  `smooth_mesh`/`bevel_mesh` until it lands upstream. `--check`'s "mesh-edit
+  patch" preflight (`src/armorpaint_mcp/doctor.py`) catches an older build with
+  a clear error instead of a silent "function not found" minic failure. ⚠️ This
+  project's tools have not yet been re-run against a build of current upstream
+  `main` (48 commits past our old base, including the script API cleanup); the
+  local `AP_BINARY` is still the 2026-09-17 build of `spike/minic-decimate`.
+  One break is already confirmed from source: upstream `01bae6c5` renamed
+  `plugin_uv_unwrap_button` to `util_mesh_uv_unwrap` (STATUS.md Known Issue
+  #6). The other 6 registrations, `project_save`, and `script_export_mesh` are
+  unchanged on upstream `main`.
 
 ## Known gaps / open questions
 

@@ -64,9 +64,9 @@ def check_setup(cfg: Config) -> list[Check]:
             elif missing:
                 checks.append(Check("mesh-edit patch", False,
                                     f"missing minic registration(s): {', '.join(missing)} "
-                                    "-- this AP_BINARY is running stock ArmorPaint. Phase 5's "
-                                    "mesh-edit tools (decimate_mesh, etc.) need the scoped "
-                                    "local patch built -- see ROADMAP.md's \"Patch policy\"."))
+                                    "-- Phase 5's mesh-edit tools (decimate_mesh, etc.) call "
+                                    "these by name. See ROADMAP.md's \"Patch policy\" for which "
+                                    "ArmorPaint builds carry them."))
             else:
                 checks.append(Check("mesh-edit patch", True,
                                     "all 7 mesh-edit functions registered"))

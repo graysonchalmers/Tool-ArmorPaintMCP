@@ -129,13 +129,13 @@ purpose-built tools don't cover.
 The 7 mesh/UV editing tools (`decimate_mesh`, `bevel_mesh`, `subdivide_mesh`,
 `smooth_mesh`, `duplicate_mesh`, `merge_mesh_geometry`, `unwrap_mesh_uvs`)
 are different: ArmorPaint 1.0's mesh-editing algorithms are real and working
-but wired to GUI buttons only, not registered in its minic scripting engine.
-These 7 tools require `AP_BINARY` to point at a build carrying a small,
-scoped local patch that registers those existing functions for `--script`
-use (one line per function — see [ROADMAP.md's "Patch policy"](ROADMAP.md#patch-policy)
-for the mechanism and rationale). Run `ap-mcp --check` to confirm your
-`AP_BINARY` carries it; v1's five tools work fine against a stock binary
-regardless.
+but were wired to GUI buttons only, not registered in its minic scripting
+engine. This project's one-line-per-function registration patch was merged
+upstream as [armory3d/armorpaint#2139](https://github.com/armory3d/armorpaint/pull/2139)
+(`ee2f3635`, 2026-09-17), so upstream builds from that commit on carry them,
+with one naming caveat below (see [ROADMAP.md's "Patch policy"](ROADMAP.md#patch-policy)).
+Run `ap-mcp --check` to confirm; v1's five tools work against older builds
+too.
 
 ## Requirements
 
@@ -151,18 +151,25 @@ regardless.
     asset/shader export from `make.bat`) next to it or it access-violates on
     launch with zero log output. Copy the exe into `paint\build\out\` and
     run it from there.
-- **Mesh/UV editing tools need a patched build, additionally.** 7 of the 12
-  shipped tools (`decimate_mesh`, `bevel_mesh`, `subdivide_mesh`,
-  `smooth_mesh`, `duplicate_mesh`, `merge_mesh_geometry`, `unwrap_mesh_uvs` --
-  the Phase 5 tools) require `AP_BINARY` to point at a build of the same
-  checkout carrying this project's scoped local minic patch (branch
-  `spike/minic-decimate` -- see [ROADMAP.md's "Patch
-  policy"](ROADMAP.md#patch-policy) for the branch, mechanism, and current
-  state). **That branch is currently unpushed/local-only**, so reproducing
-  the full working setup on a fresh machine means building that branch, not
-  just `main`. `ap-mcp --check` reports a clear "mesh-edit patch" failure if
-  the connected `AP_BINARY` is running stock ArmorPaint -- v1's other five
-  tools work fine against a stock binary regardless.
+- **Mesh/UV editing tools need a recent build.** 7 of the 12 shipped tools
+  (`decimate_mesh`, `bevel_mesh`, `subdivide_mesh`, `smooth_mesh`,
+  `duplicate_mesh`, `merge_mesh_geometry`, `unwrap_mesh_uvs` -- the Phase 5
+  tools) need upstream `main` at or after `ee2f3635` (#2139, 2026-09-17).
+  `ap-mcp --check` reports a clear "mesh-edit patch" failure on an older
+  build.
+  - **Naming caveat (STATUS.md Known Issue #6):** upstream renamed
+    `plugin_uv_unwrap_button` to `util_mesh_uv_unwrap` in `01bae6c5`, the
+    same day. This project still calls the old name, so on a build of
+    current upstream `main`, `unwrap_mesh_uvs` fails and `--check` flags
+    `plugin_uv_unwrap_button` as missing. The other 6 tools are unaffected.
+    Until the project switches names, `unwrap_mesh_uvs` needs a build from
+    before `01bae6c5`, e.g. the checkout's `spike/minic-decimate`.
+  - **Known upstream bug:** on stock upstream, `smooth_mesh` and `bevel_mesh`
+    intermittently return corrupted geometry (uninitialized accumulator
+    arrays in `util_mesh.c`; STATUS.md Known Issues #4/#5). The fix is a
+    small local commit, not yet upstream -- see [ROADMAP.md's "Patch
+    policy"](ROADMAP.md#patch-policy) for where it lives and its upstream
+    status. Build with it for reliable results from those two tools.
 
 ## Install
 
