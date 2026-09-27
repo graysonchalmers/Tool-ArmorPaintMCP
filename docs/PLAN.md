@@ -193,7 +193,124 @@ relationship each tool's integration test proved.
   text/style description) — the harder generative problem the reference
   project also attempts; explicitly out of v1 scope.
 
-## Phase 6 (DRAFT, not approved)
+## Phase 6 (APPROVED 2026-09-27) — rename hardening, UV check, mesh replace
+
+> **Approved by Grayson 2026-09-27**, as written in "Decisions applied"
+> below. Spikes S1-S5 run before any 6.2/6.3 tool code. Decisions recorded
+> the same day (grill session). The grill answered D1-D5 plus seven design questions, and split
+> the work in two: **Phase 6** needs no ArmorPaint C change, and **Phase 7**
+> (below) holds all the C work plus item 9. Where "Decisions applied"
+> disagrees with the research text further down, the decisions win; the
+> research is kept for its citations.
+
+### Decisions applied (2026-09-27)
+
+**Build order:** 6.0 (done) → 6.1 hardening (D1) → 6.2 item 10 → 6.3 item 8.
+Item 8 reuses item 10's UV module, so item 10 lands first.
+
+**6.1 — Rename hardening (D1: pin + loud detection).**
+- Keep pinning to current-`main` names. No alias table.
+- Widen `--check` to diff **every** minic name the project emits
+  (`script_gen`, the mesh-edit tools, `create_procedural_material`,
+  `run_script`'s wrapper) against `--api`'s registered list, not just the 7
+  mesh-edit names. A rename then fails `--check` loudly instead of returning
+  `ok=True`.
+- Add a completion sentinel so an aborted script returns `ok=False`.
+  **Mechanism unverified (spike S2).** Stdout isn't capturable
+  (`WriteConsoleW`), so it needs something minic can write. Candidate for
+  saving tools: **save to a fresh path.** Python stages the input copy; the
+  script opens it, calls `project_filepath_set` to a path that doesn't exist
+  yet, then `project_save`; the sentinel is that new file existing after a
+  normal process exit. (Not "the staged copy's hash changed": a load +
+  re-save leaves the `.arm` md5 unchanged, per Known Issue #7's evidence, so
+  a no-op-bytes edit would false-fail.) This also hands 6.3's
+  verify-then-commit its temp file. S2 must confirm `project_filepath_set` +
+  save to a new path works on an opened project headlessly, and find a
+  mechanism for non-saving scripts (`run_script`, the read-only exports).
+  Ordering: `project_save` defers to the next frame, so the new file
+  existing after a normal exit is what proves the save finished.
+- This touches all 7 shipped mesh-edit tools plus `run_script`, so Phase 6's
+  gate includes a full regression rerun.
+
+**6.2 — Item 10, `check_mesh_uvs` (tiered, strict default).**
+- **Error:** zero-area UV triangles; UVs outside [0,1]. `allow_udim=True`
+  downgrades out-of-range to a warning (ArmorPaint supports UDIM tiles).
+- **Warning:** overlap % and flipped-triangle %. Mirrored and stacked
+  islands are often deliberate.
+- **Info:** coverage %.
+- `valid` = no errors. `replace_mesh`'s post-verify uses the same verdict.
+- One shared rasterizer (~256px coverage-count raster): counts > 1 give
+  overlap, counts >= 1 give coverage, and two masks give 6.3's IoU.
+- Reports per object, split on the export's `o <name>` groups (spike S1).
+
+**6.3 — Item 8, `replace_mesh`.**
+- **Modes, caller picks:** `mode="round_trip"` (same asset re-exported with
+  UVs kept, so the paint carries over unchanged) or `mode="swap"` (a
+  different mesh; paint loss expected, but layers and the other objects
+  survive).
+- **UV match = coverage IoU** between the old object's UVs and the new
+  object's. Always reported; an error only in `round_trip` mode, below a
+  threshold. The threshold is **calibrated at spike time (S3)** on a real
+  Blender round-trip pair, not guessed.
+- **Formats: everything `path_mesh_formats()` lists.**
+  - OBJ is rejected before launch if it has no `vt` lines or more than one
+    `o` group (several groups would append several objects,
+    `io/import_mesh.c:49-57`).
+  - Non-OBJ has no pre-launch UV or object-count check. A UV-less non-OBJ
+    mesh is caught only by the post-verify, and only **probably** until
+    Phase 7's `texa` zero-init lands: `import_mesh_add_mesh` fills missing
+    UVs with unzeroed `i16_array_create` memory (`io/import_mesh.c:260-263`).
+    No gate test may expect a UV-less non-OBJ to be rejected until then.
+- **No UVs = reject**, in both modes.
+- **Carry-over, both modes:** the old object's name, transform and material
+  are restored on the replacement. Each restore is spike-verified (S4). If
+  minic can't reach one, it becomes a documented loss, not a blocker.
+  Physics settings are not carried.
+- **`mesh_assets` repoint: accepted.** It's stock append behavior
+  (`io/import_mesh.c:60-64` runs on every import). The result carries a
+  warning when the project has more than one object: Reimport Mesh
+  (`project.c:379-381`, `replace_existing=true`) will reload only the
+  replacement file and remove the other objects.
+- **Verify-then-commit:** always edit a temp copy, post-verify it, and only
+  then move it to `output_project` or over the caller's file. A failure
+  never touches the target, even with `in_place=True`.
+- **Post-verify:** the object-name set and count are unchanged (the name is
+  carried over); the replaced object's exported geometry matches the
+  replacement's; untouched objects are byte-identical in the export; the
+  layer count is unchanged; `check_mesh_uvs` is `valid` on the replaced
+  object; in `round_trip` mode, IoU >= threshold.
+
+**Spikes (before any 6.2/6.3 tool code):**
+- **S1, per-object UV isolation.** Source-read: `export_mesh_run` →
+  `export_obj_run` writes `o <name>` per paint object
+  (`io/export_mesh.c:8-20`, `io/export_obj.c:89`). Confirm empirically that
+  per-object `vt`/`f` ranges parse cleanly, including right after an
+  append. Q2, Q7 and Q11 all depend on it.
+- **S2, completion sentinel mechanism** (6.1).
+- **S3, IoU threshold.** Score a real Blender round-trip pair (edited
+  geometry, UVs kept) against a re-unwrapped version of the same mesh. Pick
+  the threshold from the gap.
+- **S4, carry-over reachability** from minic: reading the old object's
+  material, the `transform_t` fields, and `script_object_set_name`.
+- **S5, the four-call composition** (the draft's 6.2 task 2).
+
+**Fixtures:** the draft's `sample_project_objects.arm` (3 objects), a
+replacement OBJ with UVs, the S3 round-trip pair, and **at least one
+committed non-OBJ fixture with UVs**, in a format this build imports
+natively (pick at spike time). Every format beyond OBJ plus that one is
+untested; say so in the tool docstring.
+
+**Known risks carried into Phase 6 (closed in Phase 7 where possible):**
+- A UV-less non-OBJ replacement is caught probabilistically, not certainly
+  (`texa` not zeroed).
+- Object-mask remap on delete: a masked layer can land on the wrong object
+  in a multi-object project (D5). Not headless-testable.
+- Reimport Mesh after a replace on a multi-object project collapses the
+  scene (stock behavior; warned, not fixed).
+
+---
+
+*Research text below is the pre-grill draft, kept for context.*
 
 > **Draft for Grayson's review, not a scheduled phase.** Written 2026-09-27
 > from source reading only: nothing was built or run (the ArmorPaint
@@ -303,7 +420,7 @@ flag set. This likely explains why ROADMAP.md recorded item 8 as
    (`minic_impl.c:164-169`), and `--background --script` now waits for
    pending script callbacks before quitting (`args.c:117-123`).
 
-### 6.1 — Item 10: UV validity check (most ready; no ArmorPaint patch)
+### Research: item 10, UV validity check (now 6.2)
 
 **What the "UV validity check" is in source.** The closest match found is
 `b62fd323` ("Add basic uv map check", 2025-09-09): 8 lines inside the OBJ
@@ -347,7 +464,7 @@ Overlap detection is possible but naive O(n^2); defer it unless asked.
 **Feasibility:** source-read only. Needs 6.0 only for a trustworthy
 binary, not for any new registration.
 
-### 6.2 — Item 8: non-destructive mesh replace (ready after 6.0; no patch)
+### Research: item 8, non-destructive mesh replace (now 6.3)
 
 **The roadmap's two paths, as they read on `origin/main`:**
 - **`script_import_asset(path, hdr)` is destructive.** It
@@ -474,7 +591,44 @@ risk.
 3. The `replace_mesh` tool and unit tests.
 4. Integration tests (see Gate).
 
-### 6.3 — Item 9: targeted 2-object merge (least ready; spike first)
+## Phase 7 (DRAFT, not approved) — ArmorPaint C changes + item 9
+
+> Split out of Phase 6 on 2026-09-27 (grill Q12). Starts only after
+> Phase 6's gate is green.
+
+**Route (D3): upstream-first, bridged locally.**
+- One small, single-purpose upstream PR per change. **Each PR is opened
+  only on Grayson's explicit go**, and each change to the ArmorPaint
+  checkout still needs his go (project CLAUDE.md). D3 is a default route,
+  not standing approval.
+- A local integration branch in the checkout = upstream `main` + every
+  open PR (today: #2148). `AP_BINARY` builds from it. `--check` detects
+  each dependency. When a PR merges, rebuild and drop it from the stack.
+- ROADMAP.md's local-patch policy becomes the fallback for changes
+  upstream declines.
+
+**The three C changes:**
+1. **`texa` zero-init** in `import_mesh_make_mesh` / `import_mesh_add_mesh`
+   (`io/import_mesh.c:183-186`, `:260-263`), the same class as #2148. A
+   UV-less mesh then comes out as deterministic all-(0,0) UVs, which
+   `check_mesh_uvs` always flags, so Phase 6's non-OBJ risk closes. Add the
+   gate test for a UV-less non-OBJ rejection only once this is in
+   `AP_BINARY`.
+2. **Object-mask remap on delete (D5: yes, upstream it).** The delete path
+   (`ui/tab_meshes.c:128-134`) should remap the way
+   `util_mesh_merge_geometry_down` already does (`util/util_mesh.c:637-645`).
+3. **`script_object_merge(object_t *o, object_t *into)` (D2).** It goes in
+   `minic_impl.c`, in the maintainer's `c0df922d` shape: take `object_t*`,
+   check `ext_type`, and wrap the GPU state (~25 lines across 3 files).
+   Scripts never touch `->ext`, so the zero-patch `->ext` spike (7.1 task
+   1 below) is **dropped**.
+
+Then item 9's `merge_mesh_pair` tool goes on top of change 3.
+
+### 7.1 (was 6.3) — Item 9: targeted 2-object merge
+
+> **Superseded in part by D2 (2026-09-27):** the wrapper, not the
+> one-liner; no `->ext` spike. The text below is the pre-grill research.
 
 **The Phase 5 and ROADMAP "no accessor" conclusion was wrong when it was
 made.** `util_mesh_merge_geometry_down(mesh_object_t *main_object,
@@ -524,8 +678,43 @@ smaller (D2).
 **Not ready to schedule** until D2 is decided and the spike passes. If the
 change goes upstream-first, the tool waits for the merge.
 
-**Gate (draft):** headless-verifiable on the 6.0-rebuilt binary, recorded
-in STATUS.md with evidence:
+**Gates (split 2026-09-27, grill Q12).**
+
+**Phase 6 gate:** headless-verifiable, recorded in STATUS.md with
+evidence:
+- 6.0: met (see its DONE note).
+- **6.1 hardening:**
+  - `--check` fails loudly when any emitted minic name is missing from
+    `--api` (unit test on a mocked `--api` listing with one name removed).
+  - A script with an injected undefined call returns `ok=False`.
+  - **Full regression rerun** on the same binary: `pytest -q`,
+    `-m integration`, `smoke/smoke.ps1`, all exit 0.
+- **6.2 item 10:** unit tests on synthetic OBJ text flag each defect class
+  at its tier (and `allow_udim` downgrades out-of-range) and pass a clean
+  mesh; an integration run on `sample_project.arm` returns a well-formed
+  per-object report.
+- **6.3 item 8** (on the new objects fixture):
+  - The post-verify list in "Decisions applied" holds, for an OBJ and for
+    the committed non-OBJ fixture.
+  - Transform and material come back restored wherever S4 proved them
+    reachable.
+  - `round_trip` passes the S3 round-trip pair and fails the re-unwrapped
+    version on IoU. `swap` accepts the re-unwrapped version and reports
+    its IoU.
+  - Negative tests: a bad old name gives `ok=False`; an OBJ without `vt`,
+    and an OBJ with two `o` groups, are rejected before launch; with
+    `in_place=True`, a failing post-verify leaves the caller's file
+    byte-identical.
+  - Multi-object projects get the `mesh_assets` warning.
+  - Object-mask remapping is out of headless reach and recorded as a known
+    risk, not gated.
+- **Smoke:** one registration probe per new tool.
+
+**Phase 7 gate:** item 9's list below, plus: a UV-less non-OBJ replacement
+is rejected deterministically once the `texa` fix is in `AP_BINARY`, and
+`--check` reports every open-PR dependency of the integration build.
+
+*Pre-grill gate draft, kept for context:*
 - **6.0** (✅ met 2026-09-27, evidence in 6.0's DONE note):
   - `ap-mcp --check` is all green.
   - `--api` output contains `util_mesh_uv_unwrap` and not
@@ -561,22 +750,22 @@ in STATUS.md with evidence:
 
 ### Decisions for Grayson
 
-Policy calls this draft deliberately doesn't make:
-- **D1 — Rename handling (6.0).** Pin to current-`main` names, or resolve
-  function names from `--api`? Resolving them keeps older builds working
-  and matches the "dynamic catalogs" convention, at the cost of more code.
-  *Interim: pinned to `util_mesh_uv_unwrap` on 2026-09-27, the shortest
-  change. Revisit if upstream renames again; the maintainer warned
-  another script-API cleanup is coming.*
-- **D2 — Item 9's C change: upstream-first or local patch?** And which
-  shape: the one-line `X2` registration (#2139's class), or a
-  `script_object_merge` wrapper in the maintainer's `c0df922d` style?
-- **D3 — Default route for future minic registrations.** #2139 merged the
-  same day with no review friction. Should registrations go straight
-  upstream by default now, with local patches kept only for things
-  upstream declines? That would also retire ROADMAP.md's local-patch
-  policy for the registration class.
-- **D4 — Item 8 semantics.**
+All answered in the 2026-09-27 grill; see "Decisions applied" at the top
+of Phase 6 and the Phase 7 block.
+- ~~**D1 — Rename handling (6.0).**~~ **Pin + loud detection:** keep
+  pinning; `--check` diffs every emitted name against `--api`; add a
+  completion sentinel (6.1).
+- ~~**D2 — Item 9's C change: upstream-first or local patch?**~~
+  **Upstream-first (per D3), as a `script_object_merge` wrapper** in the
+  `c0df922d` shape. No `->ext` spike.
+- ~~**D3 — Default route for future minic registrations.**~~
+  **Upstream-first with a local integration branch as the bridge.** Each
+  PR and each checkout change still needs Grayson's explicit go.
+- ~~**D4 — Item 8 semantics.**~~ **(a)** reject in both modes; **(b-d)**
+  carry name, transform and material in both modes; **(e)** both
+  meanings, caller picks via `mode`, and IoU gates `round_trip`; **(f)**
+  accept the repoint and warn on multi-object projects. Original
+  sub-questions:
   - (a) Reject replacement meshes without UVs, or accept them with a
     warning?
   - (b) Does the replacement keep the old object's name?
@@ -590,8 +779,8 @@ Policy calls this draft deliberately doesn't make:
     project's `mesh_assets` at the replacement file
     (`io/import_mesh.c:60-64`)? After a replace, "reimport mesh" reloads
     the new file, not the original.
-- **D5 — Upstream the `object_mask`-on-delete remap?** It's small, mirrors
-  `util/util_mesh.c:637-645`, and affects GUI users too.
+- ~~**D5 — Upstream the `object_mask`-on-delete remap?**~~ **Yes**, as
+  Phase 7 change 2 (per D3).
 - ~~**D6 — Upstream the zero-init fix now?**~~ Done 2026-09-27 on
   Grayson's go-ahead: armory3d/armorpaint#2148.
 - ~~**D7 — Bookkeeping for 6.0.**~~ Recorded as a Phase 5 regression fix

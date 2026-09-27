@@ -83,7 +83,7 @@ regenerates all 14 images through the real shipped tools.
 |:--:|:--:|
 | ![decimate_mesh before](docs/images/gallery/mesh_edit/decimate_mesh_before.png) | ![decimate_mesh after](docs/images/gallery/mesh_edit/decimate_mesh_after.png) |
 
-*`decimate_mesh` genuinely reduces vertex/face count (verified in `tests/test_decimate_mesh_integration.py`), but that reduction isn't visually obvious in this wireframe render — investigating why is folded into the same follow-up as `smooth_mesh`'s flakiness (see [STATUS.md](STATUS.md) Known Issue #4).*
+*`decimate_mesh` genuinely reduces vertex/face count (verified in `tests/test_decimate_mesh_integration.py`). Almost all of the reduction is the fixture's thin bevel strips collapsing, which is only a few pixels wide at this framing (see [STATUS.md](STATUS.md) Known Issue #7).*
 
 | `bevel_mesh` — before | `bevel_mesh` — after |
 |:--:|:--:|

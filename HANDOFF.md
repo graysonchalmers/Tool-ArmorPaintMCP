@@ -50,8 +50,8 @@ app-owned) is fully merged and can be retired once the session closes.
 - D1 was pinned for now; the maintainer warned of more script-API renames.
   After any `AP_BINARY` rebuild, diff `--api` and run `--check` +
   integration. An undefined minic call still exits 0 with `ok=True`.
-- `decimate_mesh`'s gallery symptom (no visible change despite real count
-  drop): still not ruled in or out.
+- ~~`decimate_mesh`'s gallery symptom~~: closed 2026-09-27 as STATUS.md
+  Known Issue #7 (fixture-scale effect, not a bug).
 - Parked small items:
   - the `_failure()` key-set assertion gap (2 of 10 call sites);
   - spec Amendment 3's "6 of 7 functions patched" prose;

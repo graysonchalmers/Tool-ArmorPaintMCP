@@ -120,10 +120,10 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory() as tmp:
         pairs = {
-            # decimate_mesh's numeric reduction doesn't reliably show up
-            # visually in this render -- see STATUS.md Known Issue #4. Don't
-            # assume a re-render will look different just because the numbers
-            # changed.
+            # decimate_mesh's grid clustering (~0.067-unit cells at 0.85)
+            # collapses the fixture's 0.03-unit bevel strips but can't merge
+            # its ~1-unit face grid, so the change is only a few pixels wide
+            # at this framing -- real, just small (STATUS.md Known Issue #7).
             "decimate_mesh": _simple_tool(
                 tmp, "decimate_mesh", lambda **kw: decimate_mesh(strength=0.85, **kw)),
             "bevel_mesh": _simple_tool(

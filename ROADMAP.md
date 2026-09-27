@@ -61,9 +61,9 @@ MeshTriage, and MeshTriage's scope is unaffected by this pivot.
 | 5 | `smooth_mesh` | ✅ shipped (Phase 5) |
 | 6 | `duplicate_mesh` | ✅ shipped (Phase 5) |
 | 7 | `merge_mesh_geometry` | ✅ shipped (Phase 5) |
-| 8 | Non-destructive mesh replace/swap | ⬜ drafted (Phase 6 draft, 6.2) — source-read: composes with no patch as `script_append_mesh` + `script_object_remove` (`c0df922d`); earlier "inconclusive" likely because the old binary predated `4665266b`'s append fix. Needs a multi-object fixture + D4 semantics decisions |
-| 9 | Targeted 2-object merge (`merge_geometry_down`'s real use case) | ⬜ drafted (Phase 6 draft, 6.3) — earlier "needs a new accessor" was wrong: `script_get_object(name)->ext` reaches the `mesh_object_t` (`MINIC_P(ext)`), so a one-line registration looks feasible. Zero-patch spike first; upstream-vs-local is decision D2 |
-| 10 | UV validity check (1.0 changelog item) | ⬜ drafted (Phase 6 draft, 6.1) — upstream's check (`b62fd323`, OBJ-import-only, console output) isn't script-reachable; plan is a read-only Python check over `script_export_mesh`, no patch |
+| 8 | Non-destructive mesh replace/swap | ⬜ approved 2026-09-27 (Phase 6.3) — composes with no patch as `script_append_mesh` + `script_object_remove` (`c0df922d`). D4 answered 2026-09-27: `round_trip`/`swap` modes, UV-IoU gate, all formats, verify-then-commit, name/transform/material carried over |
+| 9 | Targeted 2-object merge (`merge_geometry_down`'s real use case) | ⬜ decided, not approved (Phase 7) — D2 answered 2026-09-27: upstream-first `script_object_merge(object_t*, object_t*)` wrapper in the maintainer's `c0df922d` shape; no `->ext` spike |
+| 10 | UV validity check (1.0 changelog item) | ⬜ approved 2026-09-27 (Phase 6.2) — upstream's check (`b62fd323`) isn't script-reachable; read-only Python check over `script_export_mesh`, tiered errors/warnings, `allow_udim` escape hatch, no patch |
 | 11 | `inspect_project` | ✅ shipped (v1, Phase 3) |
 | 12 | `reexport_project` | ✅ shipped (v1, Phase 1) |
 | 13 | `create_procedural_material` | ✅ shipped (v1, Phase 2) — covers the materials/blockout secondary want |
@@ -80,6 +80,17 @@ with no patch (`script_append_mesh` + `script_object_remove`), and item 9's
 10 is best done Python-side on `script_export_mesh`.
 
 ## Patch policy
+
+**Current default (D3, 2026-09-27): upstream-first, bridged locally.** Every
+ArmorPaint C change (registration or small fix) goes upstream as one small,
+single-purpose PR. The same commit is stacked on a local integration branch
+(upstream `main` + every open PR), which `AP_BINARY` builds from, so tools
+don't wait on review. When a PR merges, rebuild and drop it from the stack.
+The local-patch policy below is now the **fallback** for changes upstream
+declines. This is a default route, not standing approval: each PR and each
+change to the ArmorPaint checkout still needs Grayson's explicit go. Queued
+for Phase 7: `texa` zero-init, object-mask remap on delete, and
+`script_object_merge` (docs/PLAN.md).
 
 **Decision (2026-09-16, supersedes part of the original spec — see Amendment 3):**
 a small, scoped local patch to `paint\sources\minic_api_list.h` in the ArmorPaint
@@ -123,9 +134,10 @@ corrupted, fixed 0/10 + 0/10.
   file changed, 7 functions registered and empirically verified.
   A further function, `util_mesh_merge_geometry_down` (the GUI's targeted
   "merge with the object below"), was considered and rejected as a one-liner
-  -- it needs a new minic accessor for "the other object" that doesn't exist,
-  not just a registration (see roadmap item 9); it was never actually
-  attempted/registered. Incremental rebuild after the full batch: 2.3s.
+  at the time, on the belief that minic had no accessor for "the other
+  object". That belief was wrong (`object_t.ext` is reachable; Phase 6
+  draft), and D2 (2026-09-27) chose a `script_object_merge` wrapper instead
+  of the one-liner anyway (roadmap item 9, Phase 7). Incremental rebuild after the full batch: 2.3s.
 - **Upstream ambition: done.** Grayson's first open-source contribution, merged
   same day it was opened. Item 9's dead end was left out of it.
 - **Operational dependency now:** `AP_BINARY` must be a build of upstream `main`
