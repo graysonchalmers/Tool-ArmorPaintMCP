@@ -500,7 +500,14 @@ def test_run_script_passes_custom_timeout_s_through(tmp_path):
         mock_cfg.return_value.binary, str(project), "void main() {}", 120.0)
 
 
-def test_run_script_nulls_stdout_stderr_on_runner_failure(tmp_path):
+def test_run_script_keeps_stdout_stderr_on_runner_failure(tmp_path):
+    """Fix round 1, Finding 1: once the runner has actually launched
+    ArmorPaint, its stdout/stderr are diagnostic evidence (e.g. the
+    "<script>:N: error: ..." line that caused ok=False) -- nulling them on
+    failure would throw that evidence away. Only a failure that never
+    reaches the runner (bad project path, outside allowed_roots -- see the
+    rejects_* tests above) nulls stdout/stderr, because the runner never
+    produced any."""
     project = tmp_path / "project.arm"
     project.write_bytes(b"fake")
 
@@ -513,8 +520,9 @@ def test_run_script_nulls_stdout_stderr_on_runner_failure(tmp_path):
 
         result = run_script(project=str(project), script="void main() {}")
 
-    assert result == {"ok": False, "stdout": None, "stderr": None,
+    assert result == {"ok": False, "stdout": "partial", "stderr": "err",
                        "error": "'--script' exited 1: err"}
+    assert set(result) == {"ok", "stdout", "stderr", "error"}
 
 
 def test_run_script_is_registered_as_an_mcp_tool():

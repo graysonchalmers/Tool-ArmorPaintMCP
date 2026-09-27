@@ -544,7 +544,11 @@ def run_script(project: str, script: str, timeout_s: float = DEFAULT_TIMEOUT_S) 
     process has OS-level permission to.
 
     `stdout`/`stderr` carry the script's console_log()/printf output and
-    ArmorPaint's own messages (e.g. "Project saved").
+    ArmorPaint's own messages (e.g. "Project saved") -- and, on a script
+    error, the "<script>:N: error: ..." line(s) that caused ok=False, so
+    they stay populated on failure too. They are only `None` when the
+    project/path check rejects the call before ArmorPaint ever launches
+    (e.g. `project` outside AP_ALLOWED_ROOTS, or not an existing .arm file).
 
     `timeout_s` (default 30s) bounds how long the ArmorPaint process is
     allowed to run before this call gives up and reports an uncertain
@@ -569,9 +573,7 @@ def run_script(project: str, script: str, timeout_s: float = DEFAULT_TIMEOUT_S) 
                         "stdout", "stderr")
 
     result = run_minic_script(cfg.binary, project, script, timeout_s)
-    return {"ok": result.ok,
-            "stdout": result.stdout if result.ok else None,
-            "stderr": result.stderr if result.ok else None,
+    return {"ok": result.ok, "stdout": result.stdout, "stderr": result.stderr,
             "error": result.error}
 
 
