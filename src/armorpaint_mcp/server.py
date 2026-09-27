@@ -57,12 +57,36 @@ def _is_arm_project_file(path: str) -> bool:
     return os.path.isfile(path) and path.lower().endswith(".arm")
 
 
+def _argv_path_error(path: str, what: str) -> str | None:
+    """An error message if `path` can't survive ArmorPaint's command line,
+    else None. Call it on every path ArmorPaint receives as an argv argument
+    (not paths written inside a --script file, which arrive as UTF-8), before
+    launching. ArmorPaint's Windows build reads argv as ANSI
+    (base/sources/backends/windows_system.c: WinMain passes __argv), then
+    decodes it as UTF-8 (base/sources/iron_file.c), so any non-ASCII character
+    corrupts the path. The project then fails to open, ArmorPaint only logs
+    "Could not open file" (paint/sources/io/import_arm.c), keeps its default
+    scene, and still runs the script: a saving tool would save the default
+    scene with ok=True (Known Issue #12). Spaces are fine."""
+    if path.isascii():
+        return None
+    return (f"{what} '{path}' contains non-ASCII characters, which ArmorPaint "
+            f"cannot open: its Windows build receives command-line paths as "
+            f"ANSI (argv), so the path arrives corrupted and ArmorPaint would "
+            f"silently use its default scene instead -- use an ASCII-only path "
+            f"(spaces are fine)")
+
+
 def _resolve_edit_target(project: str, output_project: str | None,
-                         in_place: bool, cfg) -> tuple[str, str] | dict:
+                         in_place: bool, cfg,
+                         output_via_argv: bool = False) -> tuple[str, str] | dict:
     """Validate a saving tool's inputs. Returns (project, target) -- both
     absolute and inside AP_ALLOWED_ROOTS, target's directory created -- or
     a _failure(..., "output_project") dict. Mutating tools default to a new
-    output file; in_place=True targets the caller's own project."""
+    output file; in_place=True targets the caller's own project. `project`
+    always reaches ArmorPaint via argv; pass output_via_argv=True when the
+    tool also re-opens the output that way (checked before the directory is
+    created)."""
     try:
         project = ensure_within_roots(project, cfg.allowed_roots)
     except PathNotAllowed as exc:
@@ -70,6 +94,8 @@ def _resolve_edit_target(project: str, output_project: str | None,
     if not _is_arm_project_file(project):
         return _failure(f"'{project}' is not an existing .arm project file",
                         "output_project")
+    if (error := _argv_path_error(project, "project")) is not None:
+        return _failure(error, "output_project")
     if in_place:
         if output_project is not None:
             return _failure(
@@ -89,6 +115,8 @@ def _resolve_edit_target(project: str, output_project: str | None,
         return _failure(
             "output_project must not be the same file as project -- use "
             "in_place=True to edit project itself", "output_project")
+    if output_via_argv and (error := _argv_path_error(output_project, "output_project")):
+        return _failure(error, "output_project")
     try:
         os.makedirs(os.path.dirname(output_project) or ".", exist_ok=True)
     except OSError as exc:
@@ -345,6 +373,8 @@ def merge_mesh_geometry(project: str, output_project: str | None = None,
     if not _is_arm_project_file(checked_project):
         return _failure(f"'{checked_project}' is not an existing .arm project file",
                         "output_project")
+    if (error := _argv_path_error(checked_project, "project")) is not None:
+        return _failure(error, "output_project")
 
     api_result = run_api(cfg.binary, checked_project)
     if not api_result.ok:
@@ -423,6 +453,9 @@ def reexport_project(project: str, preset: str, output_dir: str) -> dict:
         output_dir = ensure_within_roots(output_dir, cfg.allowed_roots)
     except PathNotAllowed as exc:
         return _failure(str(exc), "files")
+    for path, what in ((project, "project"), (output_dir, "output_dir")):
+        if (error := _argv_path_error(path, what)) is not None:
+            return _failure(error, "files")
 
     result = export_textures(cfg.binary, project, "png", preset, output_dir)
     return {"ok": result.ok, "files": result.files if result.ok else None,
@@ -523,6 +556,8 @@ def inspect_project(project: str) -> dict:
     if not _is_arm_project_file(project):
         return _failure(f"'{project}' is not an existing .arm project file",
                         "objects", "materials", "layers")
+    if (error := _argv_path_error(project, "project")) is not None:
+        return _failure(error, "objects", "materials", "layers")
 
     result = run_api(cfg.binary, project)
     if not result.ok:
@@ -603,6 +638,8 @@ def check_mesh_uvs(project: str, allow_udim: bool = False,
     if not _is_arm_project_file(project):
         return _failure(f"'{project}' is not an existing .arm project file",
                         "valid", "objects")
+    if (error := _argv_path_error(project, "project")) is not None:
+        return _failure(error, "valid", "objects")
     with tempfile.TemporaryDirectory(prefix="ap-mcp-") as tmp:
         text, error = _export_obj(cfg, project, os.path.join(tmp, "mesh.obj"), timeout_s)
     if error is not None:
@@ -710,7 +747,10 @@ def replace_mesh(project: str, old_object: str, new_mesh: str, mode: str = "roun
     if mode not in ("round_trip", "swap"):
         return _replace_failure(f"mode must be 'round_trip' or 'swap', got {mode!r}")
     cfg = _ensure_ready()
-    resolved = _resolve_edit_target(project, output_project, in_place, cfg)
+    # The result is re-opened via argv (--api, --script) from a fresh sibling
+    # of the target, so the target path must survive argv too.
+    resolved = _resolve_edit_target(project, output_project, in_place, cfg,
+                                    output_via_argv=True)
     if isinstance(resolved, dict):
         return _replace_failure(resolved["error"])
     project, target = resolved
@@ -893,6 +933,8 @@ def run_script(project: str, script: str, timeout_s: float = DEFAULT_TIMEOUT_S) 
     if not _is_arm_project_file(project):
         return _failure(f"'{project}' is not an existing .arm project file",
                         "stdout", "stderr")
+    if (error := _argv_path_error(project, "project")) is not None:
+        return _failure(error, "stdout", "stderr")
 
     result = run_minic_script(cfg.binary, project, script, timeout_s)
     return {"ok": result.ok, "stdout": result.stdout, "stderr": result.stderr,

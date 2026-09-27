@@ -1270,3 +1270,115 @@ def test_uv_gate_rejects_invalid_replacement_uvs_in_either_mode():
     for mode in ("round_trip", "swap"):
         _, error = server._replace_uv_gate(_fixture_text("base"), no_uv, "Base", mode, False, 1)
         assert error is not None and "no UVs" in error
+
+
+# --- Final-review C1 / Known Issue #12: non-ASCII argv paths -------------------
+
+TRI_OBJ = "o G\nv 0 0 0\nv 1 0 0\nv 1 1 0\nvt 0 0\nvt 1 0\nvt 1 1\nf 1/1 2/2 3/3\n"
+
+
+def _argv_case_setup(tmp_path, project_dir: str):
+    """A real .arm file (so the guard, not the existence check, rejects) in
+    `project_dir` under tmp_path, plus an ASCII replacement mesh."""
+    d = tmp_path / project_dir
+    d.mkdir(exist_ok=True)
+    project = d / "p.arm"
+    project.write_bytes(b"x")
+    mesh = tmp_path / "g.obj"
+    mesh.write_text(TRI_OBJ)
+    return str(project), str(mesh)
+
+
+_NON_ASCII_CASES = {
+    # every tool that hands `project` to ArmorPaint on the command line
+    "decimate_mesh": lambda p, m, t: decimate_mesh(p, 0.5, output_project=str(t / "o.arm")),
+    "bevel_mesh": lambda p, m, t: bevel_mesh(p, 0.1, output_project=str(t / "o.arm")),
+    "subdivide_mesh": lambda p, m, t: subdivide_mesh(p, output_project=str(t / "o.arm")),
+    "smooth_mesh": lambda p, m, t: smooth_mesh(p, output_project=str(t / "o.arm")),
+    "duplicate_mesh": lambda p, m, t: duplicate_mesh(p, output_project=str(t / "o.arm")),
+    "unwrap_mesh_uvs": lambda p, m, t: unwrap_mesh_uvs(p, output_project=str(t / "o.arm")),
+    "decimate_mesh_in_place": lambda p, m, t: decimate_mesh(p, 0.5, in_place=True),
+    "merge_mesh_geometry": lambda p, m, t: merge_mesh_geometry(p, output_project=str(t / "o.arm")),
+    "check_mesh_uvs": lambda p, m, t: check_mesh_uvs(p),
+    "inspect_project": lambda p, m, t: inspect_project(p),
+    "run_script": lambda p, m, t: run_script(p, "void main() {}\n"),
+    "replace_mesh": lambda p, m, t: replace_mesh(p, "Cone", m, mode="swap",
+                                                 output_project=str(t / "o.arm")),
+    "reexport_project": lambda p, m, t: reexport_project(p, "generic", str(t / "tex")),
+}
+
+
+@pytest.mark.parametrize("tool", sorted(_NON_ASCII_CASES))
+def test_a_non_ascii_project_path_is_rejected_before_any_launch(tmp_path, tool):
+    project, mesh = _argv_case_setup(tmp_path, "\u00d8")
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.list_export_presets", return_value=["generic"]), \
+         patch("armorpaint_mcp.server.run_api") as mock_api, \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run, \
+         patch("armorpaint_mcp.server.export_textures") as mock_export:
+        _cfg(mock_cfg)
+        result = _NON_ASCII_CASES[tool](project, mesh, tmp_path)
+
+    assert result["ok"] is False
+    assert project in result["error"] and "ASCII" in result["error"]
+    assert all(v is None for k, v in result.items() if k not in ("ok", "error"))
+    mock_api.assert_not_called()
+    mock_run.assert_not_called()
+    mock_export.assert_not_called()
+    assert not (tmp_path / "o.arm").exists() and not (tmp_path / "tex").exists()
+
+
+def test_replace_mesh_rejects_a_non_ascii_output_project_before_creating_anything(tmp_path):
+    project, mesh = _argv_case_setup(tmp_path, "ascii dir")
+    out = tmp_path / "\u00d8 out" / "o.arm"
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_api") as mock_api, \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
+        _cfg(mock_cfg)
+        result = replace_mesh(project, "Cone", mesh, mode="swap", output_project=str(out))
+
+    assert result["ok"] is False
+    assert str(out) in result["error"] and "ASCII" in result["error"]
+    assert set(result) == {"ok", "output_project", "iou", "retention", "warnings", "error"}
+    mock_api.assert_not_called()
+    mock_run.assert_not_called()
+    assert not out.parent.exists()
+
+
+def test_reexport_project_rejects_a_non_ascii_output_dir(tmp_path):
+    project, _ = _argv_case_setup(tmp_path, "ascii dir")
+    out = tmp_path / "\u00d8 tex"
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.list_export_presets", return_value=["generic"]), \
+         patch("armorpaint_mcp.server.export_textures") as mock_export:
+        _cfg(mock_cfg)
+        result = reexport_project(project, "generic", str(out))
+
+    assert result == {"ok": False, "error": result["error"], "files": None}
+    assert str(out) in result["error"] and "ASCII" in result["error"]
+    mock_export.assert_not_called()
+
+
+def test_mesh_edit_output_project_may_be_non_ascii(tmp_path):
+    """The mesh edits' output path travels inside the UTF-8 script file, not
+    argv, so it is deliberately not guarded."""
+    project, _ = _argv_case_setup(tmp_path, "ascii dir")
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server._run_saving_script",
+               return_value=ScriptResult(ok=False, stdout="", stderr="", error="boom")) as mock_run:
+        _cfg(mock_cfg)
+        result = subdivide_mesh(project, output_project=str(tmp_path / "\u00d8" / "o.arm"))
+    assert result["error"] == "boom"
+    mock_run.assert_called_once()
+
+
+def test_an_ascii_path_with_spaces_passes_the_argv_guard(tmp_path):
+    project, _ = _argv_case_setup(tmp_path, "dir with spaces")
+    assert server._argv_path_error(project, "project") is None
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script",
+               return_value=ScriptResult(ok=True, stdout="hi", stderr="")) as mock_run:
+        _cfg(mock_cfg)
+        result = run_script(project, "void main() {}\n")
+    assert result["ok"] is True
+    mock_run.assert_called_once()

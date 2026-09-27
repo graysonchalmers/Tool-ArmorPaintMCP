@@ -192,32 +192,20 @@ def test_output_directory_is_created(tmp_path):
 
 @pytest.mark.integration
 def test_non_ascii_output_directory_is_handled_cleanly(tmp_path):
-    """Review Focus 1 (controller addition): a known-good fixture pair
-    (objects3.arm/Cone + repl_grid5.obj, same pair test_output_directory_is_created
-    uses), output_project under a non-ASCII, space-containing directory that
-    doesn't exist yet. Either ArmorPaint/Python handle it (ok=True, file at
-    that exact path) or the tool fails closed (ok=False, clean error) --
-    either way nothing stray is left under tmp_path."""
-    out = tmp_path / "Ø dir with spaces" / "o.arm"
+    """Review Focus 1 (controller addition), tightened by the final-review
+    C1 fix: a known-good fixture pair (objects3.arm/Cone + repl_grid5.obj,
+    same pair test_output_directory_is_created uses), output_project under a
+    non-ASCII, space-containing directory that doesn't exist yet. replace_mesh
+    re-opens its output through ArmorPaint's ANSI argv (Known Issue #12), so
+    it must refuse the path before launching and create nothing -- not even
+    the directory."""
+    out = tmp_path / "\u00d8 dir with spaces" / "o.arm"
     r = replace_mesh(os.path.join(PHASE6, "objects3.arm"), "Cone",
                      os.path.join(PHASE6, "repl_grid5.obj"), mode="swap",
                      output_project=str(out))
 
-    found = []
-    for dirpath, dirnames, filenames in os.walk(tmp_path):
-        for f in filenames:
-            found.append(os.path.relpath(os.path.join(dirpath, f), tmp_path))
-
-    if r["ok"] is True:
-        assert out.is_file(), (
-            f"ok=True but the file isn't at the exact non-ASCII path {out}; "
-            f"files actually under tmp_path: {found}")
-        assert found == [os.path.relpath(str(out), tmp_path)], (
-            f"stray file(s) left under tmp_path alongside the real output: {found}")
-    else:
-        assert r["error"], "ok=False must carry a clean error message"
-        assert found == [], (
-            f"ok=False but files were left behind under tmp_path (no .tmp.arm or "
-            f"other stray expected): {found}")
-        assert r["output_project"] is None and r["iou"] is None and r["retention"] is None
-        assert r["warnings"] is None
+    assert r["ok"] is False
+    assert str(out) in r["error"] and "ASCII" in r["error"]
+    assert r["output_project"] is None and r["iou"] is None and r["retention"] is None
+    assert r["warnings"] is None
+    assert os.listdir(tmp_path) == []
