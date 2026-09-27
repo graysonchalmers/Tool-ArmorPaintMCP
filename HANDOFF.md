@@ -1,107 +1,97 @@
 # 🧭 Session Handoff — Tool-ArmorPaintMCP
 
-_Last updated: 2026-09-17 (wrap-up)_
+_Last updated: 2026-09-27 18:10 CT (wrap-up)_
 
 > The baton. Written by `wrap-up` at session end, read by `pickup` at session start.
 
 ## 🎯 Current state
 
-v1 (5 tools) + Phase 5 (7 mesh/UV editing tools) shipped, plus the mesh/UV
-visual gallery in [README.md](README.md) — before/after wireframe renders
-for all 7 Phase 5 tools, built via Blender-headless rendering of the
-tools' own OBJ exports (`scripts/_blender_render_obj.py` +
-`scripts/generate_mesh_gallery.py`). Upstream PR
-[#2139](https://github.com/armory3d/armorpaint/pull/2139) (the mesh-edit
-minic patch) is still open, awaiting review, unchanged.
+v1 (5 tools) + Phase 5 (7 mesh/UV editing tools) shipped. The `smooth_mesh`/
+`bevel_mesh` accumulator-corruption bug (STATUS.md Known Issues #4/#5) is
+now **fixed**, not just root-caused: zero-init for `util_mesh_smooth`/
+`util_mesh_bevel`/`util_mesh_calc_normals`'s accumulator arrays landed in
+the ArmorPaint checkout, verified via a 10-run repro (4/10 and 8/10
+corrupted pre-fix → 0/10 for both post-fix) plus a full regression sweep
+(122 unit + 18 integration + 13/13 smoke, no regressions). The near-zero-
+component scan that caught it is now permanent regression coverage in
+`test_smooth_mesh_integration.py`/`test_bevel_mesh_integration.py`.
 
-Building the gallery surfaced a real correctness bug: `smooth_mesh` and
-`bevel_mesh` (both Phase 5 tools, both marked ✅) don't reliably do what
-their own docstrings/tests claim — see STATUS.md Known Issues #4/#5. A
-follow-up investigation (`superpowers:systematic-debugging` in worktree
-`mystifying-banach-e42a6d`) **root-caused it**: ArmorPaint's own C source
-(`util_mesh_smooth`/`util_mesh_bevel`/`util_mesh_calc_normals`)
-accumulates into uninitialized heap memory, never zero-filled. That
-investigation's branch is now merged into `main` (`3913818`, this
-session, resolving HANDOFF.md/STATUS.md conflicts by hand since the
-branch had forked before the prior session's handoff-log migration) and
-pushed — `origin/main` confirmed in sync. See project memory
-`armorpaint-smooth-mesh-flaky-vertex-count.md` for the full writeup
-before touching any of `smooth_mesh`/`bevel_mesh`/`decimate_mesh`.
+The ArmorPaint checkout (`C:\Projects-local\z-Git\ArmorPaint`) carries both
+patches on one branch now: `spike/minic-decimate` at `e246089d` (fast-
+forward-merged this session from the now-deleted `fix/mesh-accumulator-
+zero-init`) — `2b528475` (registration-only, upstream PR #2139) and
+`e246089d` (the algorithm fix) stay separately diffable for two future
+PRs. A `gc-fork` remote (`graysonchalmers/armorpaint`) exists alongside
+`origin` for that.
 
-No fix has been written, built, or upstreamed for the root cause — that's
-explicitly a separate, bigger decision (real algorithm patch to
-ArmorPaint's own C source, not this project's registration-only patch
-policy) that needs Grayson's go-ahead first.
+Upstream PR [#2139](https://github.com/armory3d/armorpaint/pull/2139) is
+still open, awaiting review, unchanged.
 
 ## 📌 Where we stopped
 
-Everything is shipped: merge commit `3913818` on `main`, pushed, working
-tree clean, `origin/main` in sync (`0  0`). Nothing is mid-flight. The
-old branch's pre-handoff-log-migration session history was not reproduced
-verbatim in this file (it predates the migration and would have
-duplicated content) — its one new session entry lives at
-`handoff-log/2026-09-17-smooth-mesh-rootcause.md`, and this session's own
-merge/push narrative is at `handoff-log/2026-09-17-merge-rootcause-branch.md`.
+`main` pushed and in sync with `origin/main` (confirmed `0  0`). Working
+tree clean. Nothing mid-flight. The ArmorPaint checkout's `spike/minic-
+decimate` is unpushed (no separate yes given yet for pushing that branch
+anywhere — `origin` is upstream `armory3d/armorpaint`, `gc-fork` is
+Grayson's own fork).
 
 ## ▶️ Next concrete step
 
-**Decide whether/when to write the actual C-source fix** — see "Open
-questions" below, explicitly Grayson's call.
+**Decide on upstreaming.** Two independent options, neither urgent:
+- Wait for upstream review on #2139 (registration-only patch) — nothing to
+  do until a maintainer responds.
+- Decide whether/when to open a second PR for the `e246089d` algorithm fix
+  (zero-init), and whether it goes through `gc-fork` first or straight to
+  `origin`.
 
-Other options, still none urgent:
-- **Wait for upstream review on #2139** — nothing to do until a
-  maintainer responds; if it comes back with requested changes, amend
-  `graysonchalmers/armorpaint:expose-util-mesh-uv-unwrap-to-minic`
-  (mirrors local `spike/minic-decimate`, commit `2b528475`) and
-  force-push, don't re-derive the patch.
-- **ROADMAP.md items 8-10** — non-destructive mesh replace, targeted
-  2-object merge, UV validity check. None scoped into a phase yet.
-- **Clean up the two leftover worktree folders** at
-  `.claude\worktrees\mesh-uv-visual-gallery` (git already unregistered it,
-  directory itself wouldn't delete, `Device or resource busy`) and
-  `.claude\worktrees\mystifying-banach-e42a6d` (now merged — safe to
-  `git worktree remove` and delete both the local and remote
-  `claude/mystifying-banach-e42a6d` branch) by hand.
+Other open items, still none urgent:
+- ROADMAP.md items 8-10 (non-destructive mesh replace, targeted 2-object
+  merge, UV validity check) — none scoped into a phase yet.
+- `.claude\worktrees\mesh-uv-visual-gallery` — still `Device or resource
+  busy`, 4 sessions running now. `git worktree list` doesn't even see it
+  anymore (unregistered), so `Clear-MergedWorktrees.ps1` silently no-ops on
+  it. Probably needs a reboot or Sysinternals `handle.exe`, not another
+  retry from inside a session.
+- `origin/claude/mystifying-banach-e42a6d` on GitHub — merged locally weeks
+  ago, never deleted on the remote (needs its own separate yes, still not
+  given).
 
 ## ❓ Open questions
 
-- Whether/when to write the actual `util_mesh_smooth`/`util_mesh_bevel`
-  zero-fill fix in ArmorPaint's C source — explicitly Grayson's call per
-  the root-cause memory file, not something to do proactively. A real
-  algorithm patch, a bigger category of change than this project's
-  existing registration-only patch policy.
-- Whether `util_mesh_calc_normals(true)`'s shared bug also corrupts
-  *normals* (not positions) in other patched tools that call it
-  (`util_mesh.c:1100`, `1503`, `1633`) — flagged in memory, not yet
-  empirically confirmed against those tools' own outputs.
+- Whether `util_mesh_calc_normals(true)`'s zero-init fix (which covers all
+  4 of its call sites at once) fully retires the "does it corrupt normals
+  elsewhere" question, or whether one of the other 3 call sites
+  (`util_mesh.c:1100`, `1503`, `1633`) still deserves its own targeted
+  verification — leaning toward "retired," not empirically re-checked
+  against those specific tools' outputs this session.
 - Whether `decimate_mesh`'s unrelated-looking gallery symptom (no visible
   change in a wireframe render despite a real numeric vertex/face drop)
-  shares this root cause — `decimate_mesh` doesn't call any of the three
-  named functions, so probably not, but not empirically ruled out either.
-- Upstream review timeline for #2139 — still unknown, no maintainer
-  response yet.
+  shares any root cause with #4/#5 — it doesn't call any of the three fixed
+  functions, so probably not, still not empirically ruled out.
 - Live mode (deferred, not rejected) — untouched, unchanged for weeks.
 - The parked `_failure()` key-set assertion gap (2 of 10 call sites) —
-  still open, unrelated to anything recent. Worth its own tiny task.
+  still open, unrelated, worth its own tiny task.
 - Design spec's own Amendment 3 prose still says "6 of 7 functions
-  patched" (cosmetic, ROADMAP.md's own copy was corrected already).
+  patched" (cosmetic).
 - `merge_mesh_geometry`'s docstring still has no general "ok=True proves
-  only completion" caveat (only its precondition-guard-specific one) —
-  one sentence, trivial whenever `server.py` is next open.
+  only completion" caveat — one sentence, trivial whenever `server.py` is
+  next open.
 
 ## 🗂️ Changed this session
 
-- Branch: `main` · Merged `claude/mystifying-banach-e42a6d` (`--no-ff`,
-  `3913818`), resolving conflicts in `HANDOFF.md`/`STATUS.md` by hand:
-  kept the branch's full root-cause writeup for Known Issues #4/#5,
-  folded in the prior session's `decimate_mesh` observation as a caveat
-  rather than losing it, and wrote the branch's stranded session-log
-  entry to `handoff-log/2026-09-17-smooth-mesh-rootcause.md` instead of
-  reproducing its pre-migration inline history verbatim. Pushed to
-  `origin/main`, confirmed in sync.
-- Decision (+ why): did not write/build/upstream the C-source fix — that
-  remains explicitly Grayson's call, unchanged from the branch's own
-  scoping.
+- Branch: `main` · Pushed the two commits a 2026-09-23 Skills-Core session
+  had deliberately left unpushed (`cdf3985` — the Known Issue #4/#5 fix
+  itself, `bd8d2da` — `build_stamp.py` UTF-8/full-stamp fix, unrelated),
+  plus this session's `HANDOFF.md`/`CLAUDE.md` update. `origin/main`
+  confirmed in sync (`0  0`).
+- ArmorPaint checkout: fast-forward-merged `fix/mesh-accumulator-zero-init`
+  into `spike/minic-decimate` (`e246089d`), deleted the now-redundant
+  branch. No rewrite — both commits still individually diffable.
+- Decision (+ why): merged the two ArmorPaint branches into one rather than
+  leaving them diverged, since the fix branch was a strict, one-commit-
+  ahead descendant (trivial fast-forward) and a single coherent build
+  branch is less error-prone going forward than two branch names pointing
+  at nearly-the-same-but-not-quite state.
 
 ---
 📜 Full session history: `handoff-log/` (one dated file per session, oldest to newest)

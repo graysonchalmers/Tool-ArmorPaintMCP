@@ -42,16 +42,20 @@ explicitly deferred, not rejected — see the spec's "Deferred: live mode".
 - Python: `C:\Program Files\Python313\python.exe` (3.13). Project venv at
   `.venv\` (created via `python -m venv .venv`).
 - ArmorPaint checkout: `C:\Projects-local\z-Git\ArmorPaint` (from-scratch
-  C/"iron"+Kore engine rewrite). Currently on branch
-  `fix/mesh-accumulator-zero-init` (commit `e246089d`, unpushed), built on
-  top of `spike/minic-decimate` (commit `2b528475` -- the scoped mesh-edit
-  registration patch Phase 5's 7 mesh/UV tools depend on; see ROADMAP.md's
-  "Patch policy"). `e246089d` is a separate, later algorithm fix (zero-init
-  for `util_mesh_smooth`/`util_mesh_bevel`/`util_mesh_calc_normals`'s
-  accumulator arrays -- see STATUS.md Known Issues #4/#5, closed 2026-09-17)
-  and does not touch `2b528475` so each can become its own upstream PR. Not
-  a straight upstream clone right now -- flag any further local changes on
-  top of it the same way.
+  C/"iron"+Kore engine rewrite). Currently on branch `spike/minic-decimate`,
+  unpushed, at commit `e246089d` -- two commits, kept separate on purpose:
+  `2b528475` (the scoped mesh-edit registration patch Phase 5's 7 mesh/UV
+  tools depend on; see ROADMAP.md's "Patch policy") and `e246089d` on top of
+  it (a later algorithm fix -- zero-init for
+  `util_mesh_smooth`/`util_mesh_bevel`/`util_mesh_calc_normals`'s
+  accumulator arrays, STATUS.md Known Issues #4/#5, closed 2026-09-17). The
+  two branches (`spike/minic-decimate` and the now-deleted
+  `fix/mesh-accumulator-zero-init`) were fast-forward-merged into one on
+  2026-09-27 -- no rewrite, both commits still individually diffable, so
+  each can still become its own upstream PR. A `gc-fork` remote
+  (`git@github.com:graysonchalmers/armorpaint.git`) exists alongside
+  `origin` (`armory3d/armorpaint`) for that. Not a straight upstream clone
+  right now -- flag any further local changes on top of it the same way.
 - Reference implementation (for comparison only, not a dependency):
   `C:\Projects-local\z-Git\armorpaint-mcp`.
 - Config lives in `.env` (copy from `.env.example`). Never echo its contents.
