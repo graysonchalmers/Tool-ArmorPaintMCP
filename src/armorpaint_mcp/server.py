@@ -638,6 +638,47 @@ def _replace_failure(error: str) -> dict:
     return _failure(error, *_REPLACE_FIELDS)
 
 
+def _replace_uv_gate(before_text: str, after_text: str, old_object: str, mode: str,
+                     allow_udim: bool, n_objects: int) -> tuple[dict, str | None]:
+    """UV checks on the replaced object: its UVs must be valid (both modes);
+    in round_trip mode its layout must match the old one (IoU and texel
+    retention, thresholds in uv_analysis). Returns ({"iou", "retention",
+    "warnings"}, error-or-None)."""
+    before_obj, after_obj = uv_analysis.parse_obj(before_text), uv_analysis.parse_obj(after_text)
+    old_g = uv_analysis.groups_by_name(before_obj)[old_object]
+    new_g = uv_analysis.groups_by_name(after_obj)[old_object]
+    check = uv_analysis.verdict(uv_analysis.analyze(after_obj, new_g), allow_udim)
+    if not check["valid"]:
+        # before compare_layouts: a UV-less mesh has no rasterizable triangles
+        return ({"iou": None, "retention": None, "warnings": list(check["warnings"])},
+                "the replacement's UVs are invalid: " + "; ".join(check["errors"]))
+    cmp = uv_analysis.compare_layouts(before_obj, old_g, after_obj, new_g)
+    gate = {"iou": cmp["iou"], "retention": cmp["retention"], "warnings": list(check["warnings"])}
+    ratio = cmp["size_ratio"]
+    if ratio and not 0.5 <= ratio <= 2.0:
+        gate["warnings"].append(
+            f"the new mesh is {ratio:.3g}x the old one's size (a Blender FBX lands at "
+            f"100x: check the export's unit scale)")
+    if n_objects > 1:
+        gate["warnings"].append(
+            "ArmorPaint's Reimport Mesh would now reload only the replacement file and "
+            "remove the project's other objects")
+    if mode == "round_trip":
+        if cmp["iou"] < uv_analysis.IOU_MIN:
+            return gate, (f"the UV layout changed (IoU {cmp['iou']} < {uv_analysis.IOU_MIN}); "
+                          f"the paint would scramble -- use mode='swap' if that's expected")
+        retention = cmp["retention"]
+        if retention is not None and retention < uv_analysis.RETENTION_MIN:
+            return gate, (f"only {retention:.0%} of painted texels would stay in place "
+                          f"(retention {retention} < {uv_analysis.RETENTION_MIN}); use "
+                          f"mode='swap' if the mesh really changed that much")
+        if retention is not None and retention < uv_analysis.RETENTION_WARN:
+            gate["warnings"].append(
+                f"{1 - retention:.1%} of painted texels move by more than "
+                f"{uv_analysis.RETENTION_TOL:.0%} of the object's size")
+    return gate, None
+
+
 def replace_mesh(project: str, old_object: str, new_mesh: str, mode: str = "round_trip",
                  allow_udim: bool = False, output_project: str | None = None,
                  in_place: bool = False, timeout_s: float = DEFAULT_TIMEOUT_S) -> dict:
@@ -727,7 +768,11 @@ def replace_mesh(project: str, old_object: str, new_mesh: str, mode: str = "roun
                                             before_text, after_text, new_mesh)
         if problem is not None:
             return _replace_failure(f"replace did not verify: {problem}")
-        # UV gate (Task 9)
+        gate, problem = _replace_uv_gate(before_text, after_text, old_object, mode,
+                                         allow_udim, len(names_before))
+        if problem is not None:
+            return _replace_failure(f"{problem} (IoU {gate['iou']}, retention {gate['retention']})")
+        warnings = gate["warnings"]
         os.replace(fresh, target)
     except (OSError, KeyError, IndexError, TypeError, AttributeError,
             ValueError, rp.ReplaceError) as exc:
@@ -738,7 +783,7 @@ def replace_mesh(project: str, old_object: str, new_mesh: str, mode: str = "roun
         return _replace_failure(f"unexpected project state: {exc}")
     finally:
         _remove_quietly(fresh)
-    return {"ok": True, "output_project": target, "iou": None, "retention": None,
+    return {"ok": True, "output_project": target, "iou": gate["iou"], "retention": gate["retention"],
             "warnings": warnings, "error": None}
 
 

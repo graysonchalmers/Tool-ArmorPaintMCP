@@ -6,6 +6,7 @@ from unittest.mock import patch
 import pytest
 
 from armorpaint_mcp import server
+from armorpaint_mcp import uv_analysis as ua
 from armorpaint_mcp.catalog import CatalogError
 from armorpaint_mcp.runner import DEFAULT_TIMEOUT_S, ExportResult, ApiResult, ScriptResult
 from armorpaint_mcp.server import (mcp, reexport_project, create_procedural_material,
@@ -13,6 +14,13 @@ from armorpaint_mcp.server import (mcp, reexport_project, create_procedural_mate
                                    decimate_mesh, bevel_mesh, subdivide_mesh, smooth_mesh,
                                    duplicate_mesh, merge_mesh_geometry, unwrap_mesh_uvs,
                                    check_mesh_uvs, replace_mesh)
+
+UV_DIR = os.path.join(os.path.dirname(__file__), "fixtures", "phase6", "uv")
+
+
+def _fixture_text(name):
+    with open(os.path.join(UV_DIR, f"{name}.obj"), encoding="utf-8") as fh:
+        return fh.read()
 
 
 @pytest.fixture(autouse=True)
@@ -1212,3 +1220,53 @@ def test_replace_mesh_is_registered_as_an_mcp_tool():
         "project", "old_object", "new_mesh", "mode", "allow_udim",
         "output_project", "in_place", "timeout_s"}
     assert set(tool.input_schema.get("required", [])) == {"project", "old_object", "new_mesh"}
+
+
+def test_uv_gate_passes_a_round_trip_and_reports_numbers():
+    gate, error = server._replace_uv_gate(_fixture_text("base"), _fixture_text("r5_decimate"),
+                                          "Base", "round_trip", False, 1)
+    assert error is None
+    assert gate["iou"] >= ua.IOU_MIN and gate["retention"] >= ua.RETENTION_MIN
+
+
+def test_uv_gate_fails_a_re_unwrap_on_iou_in_round_trip_mode():
+    gate, error = server._replace_uv_gate(_fixture_text("base"), _fixture_text("d1_smartuv45"),
+                                          "Base", "round_trip", False, 1)
+    assert error is not None and "IoU" in error
+
+
+def test_uv_gate_fails_a_coverage_preserving_scramble_on_retention():
+    gate, error = server._replace_uv_gate(_fixture_text("base"), _fixture_text("d4_swap"),
+                                          "Base", "round_trip", False, 1)
+    assert error is not None and "retention" in error
+
+
+def test_uv_gate_swap_mode_reports_but_does_not_enforce():
+    gate, error = server._replace_uv_gate(_fixture_text("base"), _fixture_text("d4_swap"),
+                                          "Base", "swap", False, 1)
+    assert error is None
+    assert gate["retention"] < ua.RETENTION_MIN
+
+
+def test_uv_gate_warns_about_reimport_on_multi_object_projects():
+    gate, error = server._replace_uv_gate(_fixture_text("base"), _fixture_text("r8_scaled"),
+                                          "Base", "swap", False, 3)
+    assert error is None
+    assert any("Reimport Mesh" in w for w in gate["warnings"])
+
+
+def test_uv_gate_warns_when_the_replacement_is_far_off_the_old_size():
+    scaled = "\n".join(
+        ("v " + " ".join(str(float(c) * 100) for c in line.split()[1:4]))
+        if line.startswith("v ") else line
+        for line in _fixture_text("base").splitlines())
+    gate, error = server._replace_uv_gate(_fixture_text("base"), scaled, "Base", "swap", False, 1)
+    assert error is None
+    assert any("100" in w and "size" in w for w in gate["warnings"])
+
+
+def test_uv_gate_rejects_invalid_replacement_uvs_in_either_mode():
+    no_uv = "o Base\nv 0 0 0\nv 1 0 0\nv 1 1 0\nf 1 2 3\n"
+    for mode in ("round_trip", "swap"):
+        _, error = server._replace_uv_gate(_fixture_text("base"), no_uv, "Base", mode, False, 1)
+        assert error is not None and "no UVs" in error
