@@ -39,15 +39,31 @@ def test_run_script_fills_and_exports_the_already_open_project(tmp_path):
 
 
 @pytest.mark.integration
-def test_run_script_ok_true_does_not_prove_the_script_succeeded(tmp_path):
+def test_run_script_early_return_is_ok_true_with_no_output(tmp_path):
     """Documents the real, confirmed minic limitation this tool's docstring
-    warns about: a script calling an undefined function exits 0 with no
-    error, indistinguishable from success by return value alone."""
-    result = run_script(project=FIXTURE,
-                        script="void main() {\n\tthis_function_does_not_exist();\n}\n")
+    still warns about after Fix round 1's finding 2 (script errors are now
+    caught -- see test_run_script_reports_an_undefined_minic_call_as_a_failure
+    in test_phase6_hardening_integration.py): a script that `return`s early,
+    before doing its work, prints no error and exits 0 -- ok=True alone does
+    not prove the work happened. Same body as
+    test_run_script_fills_and_exports_the_already_open_project, with an
+    early `return;` as the first statement, so the only difference from a
+    script proven to write 5 PNGs is that early return -- and an empty
+    tmp_path actually means something."""
+    out_dir = str(tmp_path).replace("\\", "/")
+    script = (
+        "void main() {\n"
+        "\treturn;\n"
+        "\tscript_fill_layer();\n"
+        f'\texport_texture_run("{out_dir}", 0);\n'
+        "}\n"
+    )
+
+    result = run_script(project=FIXTURE, script=script)
 
     assert result["ok"] is True
     assert result["error"] is None
+    assert os.listdir(tmp_path) == []
 
 
 @pytest.mark.integration

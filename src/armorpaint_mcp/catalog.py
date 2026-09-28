@@ -39,7 +39,12 @@ def extract_project_state(api_text: str) -> dict:
             "'--api' output's project state block has no terminating "
             "'Scene objects in world space' section -- unexpected output shape")
     try:
-        return json.loads(api_text[start:end])
+        # armpack_to_json_value (base/sources/iron_armpack.c:799-801) writes
+        # strings as "%s" with no escaping, so a backslash here is always a
+        # literal character (a Windows path), never a JSON escape: double
+        # every one. A '"' inside a name would still break the parse -- a
+        # documented limitation (Known Issue #10), not fixable from here.
+        return json.loads(api_text[start:end].replace("\\", "\\\\"))
     except json.JSONDecodeError as exc:
         raise CatalogError(f"project state block is not valid JSON: {exc}") from exc
 
@@ -123,28 +128,40 @@ def scene_objects(api_text: str) -> list[dict]:
     ]
 
 
-_MESH_EDIT_PATCH_FUNCTIONS = [
+# Every minic function this project's generated scripts call. `ap-mcp
+# --check` confirms each is registered on AP_BINARY: an unregistered one
+# aborts the script with a "<script>:N: error: unknown function" line, and
+# upstream renames them (01bae6c5 renamed plugin_uv_unwrap_button). The
+# completeness test in tests/test_catalog.py extracts the calls from the
+# real script builders, so this list can't silently fall behind them.
+EMITTED_MINIC_FUNCTIONS = (
+    # Phase 5 mesh edits
     "util_mesh_decimate", "util_mesh_smooth", "util_mesh_bevel",
     "util_mesh_subdivide", "util_mesh_merge_geometry", "util_mesh_duplicate",
     "util_mesh_uv_unwrap",
-]
+    # create_procedural_material (script_gen.generate_script)
+    "script_project_new", "script_material_get_node",
+    "script_material_create_node_at", "script_material_set_color",
+    "script_material_set_float", "script_material_connect",
+    "script_fill_layer", "export_texture_run",
+    # saving tools (server._save_script)
+    "project_filepath_set", "project_save",
+    # check_mesh_uvs / replace_mesh verification exports
+    "script_export_mesh",
+    # replace_mesh (replace.build_replace_script)
+    "script_get_object", "string_copy", "script_object_set_name",
+    "script_get_context", "script_append_mesh", "object_set_parent",
+    "script_object_remove", "transform_build_matrix", "script_get_material",
+    "string_array_create", "string_array_push", "i32_to_string",
+    "string_equals", "string_array_join", "script_object_set_material",
+    "console_log",
+)
 
-# NOTE: mesh_edit_patch_missing() below does a raw substring match, so a name
-# here that is a prefix of another registered function's name (e.g. a future
-# "util_mesh_merge_geometry_down" alongside "util_mesh_merge_geometry") could
-# false-positive as present either direction. Harmless today -- the only
-# candidate, "util_mesh_merge_geometry_down", exists only as a comment in the
-# patched minic_api_list.h, and a comment never appears in --api output -- but
-# if it's ever actually registered (ROADMAP.md item 9), revisit this check.
 
-
-def mesh_edit_patch_missing(api_text: str) -> list[str]:
-    """Which of the mesh-edit minic functions this project's Phase 5 tools
-    depend on are NOT present in `api_text` (ArmorPaint.exe --api's static
-    output, no project needed). Empty list means the connected AP_BINARY
-    carries the scoped local patch (see ROADMAP.md's "Patch policy"); a
-    non-empty list means it's running stock ArmorPaint, where these calls
-    would silently abort the whole script (confirmed empirically during the
-    2026-09-16 spike) while still reporting ok=True -- the exact trap this
-    check exists to catch before a caller hits it."""
-    return [name for name in _MESH_EDIT_PATCH_FUNCTIONS if name not in api_text]
+def missing_minic_functions(api_text: str) -> list[str]:
+    """Which EMITTED_MINIC_FUNCTIONS are not declared in `api_text`
+    (ArmorPaint.exe --api, no project needed, which prints each registered
+    function as `<type> name(<args>);`). Whole-name match: a registered
+    util_mesh_merge_geometry_down does not count as util_mesh_merge_geometry."""
+    return [name for name in EMITTED_MINIC_FUNCTIONS
+            if not re.search(rf"\b{re.escape(name)}\s*\(", api_text)]

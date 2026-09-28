@@ -10,7 +10,7 @@ import os
 import subprocess
 from dataclasses import dataclass
 
-from armorpaint_mcp.catalog import mesh_edit_patch_missing
+from armorpaint_mcp.catalog import EMITTED_MINIC_FUNCTIONS, missing_minic_functions
 from armorpaint_mcp.config import Config, load_config
 
 
@@ -56,22 +56,23 @@ def check_setup(cfg: Config) -> list[Check]:
     if cfg.binary and os.path.isfile(cfg.binary):
         try:
             out = subprocess.run([cfg.binary, "--api"], capture_output=True,
-                                  text=True, timeout=15)
-            missing = mesh_edit_patch_missing(out.stdout) if out.returncode == 0 else None
+                                  text=True, timeout=15, errors="replace")
+            missing = missing_minic_functions(out.stdout) if out.returncode == 0 else None
             if missing is None:
-                checks.append(Check("mesh-edit patch", False,
+                checks.append(Check("minic API", False,
                                     f"'--api' exited {out.returncode}, could not check"))
             elif missing:
-                checks.append(Check("mesh-edit patch", False,
-                                    f"missing minic registration(s): {', '.join(missing)} "
-                                    "-- Phase 5's mesh-edit tools (decimate_mesh, etc.) call "
-                                    "these by name. See ROADMAP.md's \"Patch policy\" for which "
-                                    "ArmorPaint builds carry them."))
+                checks.append(Check("minic API", False,
+                                    f"not registered on this build: {', '.join(missing)} "
+                                    "-- tools that call them would fail. Rebuild AP_BINARY "
+                                    "from current upstream main (see ROADMAP.md \"Patch "
+                                    "policy\"), or update the renamed call."))
             else:
-                checks.append(Check("mesh-edit patch", True,
-                                    "all 7 mesh-edit functions registered"))
+                checks.append(Check("minic API", True,
+                                    f"all {len(EMITTED_MINIC_FUNCTIONS)} minic functions "
+                                    "this project calls are registered"))
         except (OSError, subprocess.TimeoutExpired) as exc:
-            checks.append(Check("mesh-edit patch", False, str(exc)))
+            checks.append(Check("minic API", False, str(exc)))
 
     # Check writability without creating anything: walk up to the nearest
     # existing ancestor and test that. The server makedirs the output dir at

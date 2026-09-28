@@ -18,10 +18,36 @@ save-then-reexport split silently loses the rendered pixels.
 
 
 import math
+import os
 
 
 class NodeSpecError(Exception):
     """`node_spec` is malformed or requests an unsupported node type."""
+
+
+def minic_string_literal(text: str, what: str) -> str:
+    """`text` as a minic string literal. Nothing is escaped: a double quote,
+    backslash or line break is rejected instead, so a caller-supplied name
+    can never end the literal early or smuggle in a statement."""
+    if any(ch in text for ch in '"\\\n\r'):
+        raise NodeSpecError(
+            f"{what} can't contain a double quote, backslash or line break: {text!r}")
+    return f'"{text}"'
+
+
+def minic_path_literal(path: str, what: str, *, backslashes: bool = False) -> str:
+    """`path`, made absolute, as a minic string literal. Forward slashes by
+    default (project_filepath_set, script_export_mesh and
+    export_texture_run accept them). backslashes=True doubles each backslash
+    instead: script_append_mesh REQUIRES that -- with forward slashes its
+    iron_file_exists check fails and the append silently no-ops (Phase 6
+    spike S5)."""
+    full = os.path.abspath(path)
+    if any(ch in full for ch in '"\n\r'):
+        raise NodeSpecError(f"{what} can't contain a double quote or line break: {full!r}")
+    if backslashes:
+        return '"' + full.replace("/", "\\").replace("\\", "\\\\") + '"'
+    return '"' + full.replace("\\", "/") + '"'
 
 
 def _finite_float(name: str, value) -> float:

@@ -1,15 +1,26 @@
 import asyncio
+import os
+import re
 from unittest.mock import patch
 
 import pytest
 
 from armorpaint_mcp import server
+from armorpaint_mcp import uv_analysis as ua
 from armorpaint_mcp.catalog import CatalogError
 from armorpaint_mcp.runner import DEFAULT_TIMEOUT_S, ExportResult, ApiResult, ScriptResult
 from armorpaint_mcp.server import (mcp, reexport_project, create_procedural_material,
                                    list_available_presets, inspect_project, run_script,
                                    decimate_mesh, bevel_mesh, subdivide_mesh, smooth_mesh,
-                                   duplicate_mesh, merge_mesh_geometry, unwrap_mesh_uvs)
+                                   duplicate_mesh, merge_mesh_geometry, unwrap_mesh_uvs,
+                                   check_mesh_uvs, replace_mesh)
+
+UV_DIR = os.path.join(os.path.dirname(__file__), "fixtures", "phase6", "uv")
+
+
+def _fixture_text(name):
+    with open(os.path.join(UV_DIR, f"{name}.obj"), encoding="utf-8") as fh:
+        return fh.read()
 
 
 @pytest.fixture(autouse=True)
@@ -500,7 +511,14 @@ def test_run_script_passes_custom_timeout_s_through(tmp_path):
         mock_cfg.return_value.binary, str(project), "void main() {}", 120.0)
 
 
-def test_run_script_nulls_stdout_stderr_on_runner_failure(tmp_path):
+def test_run_script_keeps_stdout_stderr_on_runner_failure(tmp_path):
+    """Fix round 1, Finding 1: once the runner has actually launched
+    ArmorPaint, its stdout/stderr are diagnostic evidence (e.g. the
+    "<script>:N: error: ..." line that caused ok=False) -- nulling them on
+    failure would throw that evidence away. Only a failure that never
+    reaches the runner (bad project path, outside allowed_roots -- see the
+    rejects_* tests above) nulls stdout/stderr, because the runner never
+    produced any."""
     project = tmp_path / "project.arm"
     project.write_bytes(b"fake")
 
@@ -513,8 +531,9 @@ def test_run_script_nulls_stdout_stderr_on_runner_failure(tmp_path):
 
         result = run_script(project=str(project), script="void main() {}")
 
-    assert result == {"ok": False, "stdout": None, "stderr": None,
+    assert result == {"ok": False, "stdout": "partial", "stderr": "err",
                        "error": "'--script' exited 1: err"}
+    assert set(result) == {"ok", "stdout", "stderr", "error"}
 
 
 def test_run_script_is_registered_as_an_mcp_tool():
@@ -566,27 +585,6 @@ def test_decimate_mesh_rejects_a_nonexistent_project_path(tmp_path):
     assert result["output_project"] is None
 
 
-def test_decimate_mesh_copies_then_edits_and_saves(tmp_path):
-    project = tmp_path / "project.arm"
-    project.write_bytes(b"fake")
-    output_project = tmp_path / "out.arm"
-
-    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
-         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
-        mock_cfg.return_value.binary = "ArmorPaint.exe"
-        mock_cfg.return_value.allowed_roots = []
-        mock_run.return_value = ScriptResult(ok=True, stdout="", stderr="")
-
-        result = decimate_mesh(project=str(project), strength=0.5,
-                               output_project=str(output_project))
-
-    assert result == {"ok": True, "output_project": str(output_project), "error": None}
-    assert output_project.exists()  # shutil.copy2 actually ran
-    script_arg = mock_run.call_args[0][2]
-    assert "util_mesh_decimate(0.5);" in script_arg
-    assert "project_save(0);" in script_arg
-
-
 def test_decimate_mesh_is_registered_as_an_mcp_tool():
     tools = asyncio.run(mcp.list_tools())
     by_name = {t.name: t for t in tools}
@@ -627,55 +625,157 @@ def test_decimate_mesh_rejects_output_project_same_as_project(tmp_path):
     assert "in_place=True" in result["error"]
 
 
-def test_decimate_mesh_converts_copy_failure_to_clean_error(tmp_path):
-    """Any OTHER shutil.copy2 failure (permissions, disk full, etc. -- not
-    just the same-file case) must also be converted to this project's
-    standard failure shape rather than escaping uncaught."""
+def _fresh_path_in(script: str) -> str:
+    """The path _save_script told ArmorPaint to save to."""
+    return re.search(r'project_filepath_set\("([^"]+)"\);', script).group(1)
+
+
+def _saving_run(stdout="", write=True):
+    """A run_minic_script stand-in that 'saves' the fresh sibling the script
+    names (as real ArmorPaint would) and returns ok."""
+    def fake(binary, project, script, timeout_s):
+        if write:
+            with open(_fresh_path_in(script), "wb") as fh:
+                fh.write(b"edited")
+        return ScriptResult(ok=True, stdout=stdout, stderr="")
+    return fake
+
+
+def _cfg(mock_cfg):
+    mock_cfg.return_value.binary = "ArmorPaint.exe"
+    mock_cfg.return_value.allowed_roots = []
+
+
+def test_decimate_mesh_edits_the_original_and_saves_to_a_fresh_sibling(tmp_path):
     project = tmp_path / "project.arm"
-    project.write_bytes(b"fake")
+    project.write_bytes(b"original")
+    output_project = tmp_path / "out" / "new" / "out.arm"  # dirs don't exist yet
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script", side_effect=_saving_run()) as mock_run:
+        _cfg(mock_cfg)
+        result = decimate_mesh(project=str(project), strength=0.5,
+                               output_project=str(output_project))
+
+    assert result == {"ok": True, "output_project": str(output_project), "error": None}
+    assert output_project.read_bytes() == b"edited"
+    assert project.read_bytes() == b"original"
+    opened, script = mock_run.call_args[0][1], mock_run.call_args[0][2]
+    assert opened == str(project)                      # the ORIGINAL is opened
+    fresh = _fresh_path_in(script)
+    assert os.path.dirname(fresh) == str(output_project.parent).replace("\\", "/")
+    assert "util_mesh_decimate(0.5);" in script
+    assert script.rstrip().endswith("project_save(0);\n}")         # save is last
+    assert not os.path.exists(fresh)                   # moved, not copied
+    assert os.listdir(output_project.parent) == ["out.arm"]
+
+
+def test_decimate_mesh_fails_when_the_script_ran_but_never_saved(tmp_path):
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"original")
     output_project = tmp_path / "out.arm"
 
     with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
-         patch("armorpaint_mcp.server.shutil.copy2",
-               side_effect=OSError("disk full")):
-        mock_cfg.return_value.binary = "ArmorPaint.exe"
-        mock_cfg.return_value.allowed_roots = []
+         patch("armorpaint_mcp.server.run_minic_script", side_effect=_saving_run(write=False)):
+        _cfg(mock_cfg)
         result = decimate_mesh(project=str(project), strength=0.5,
                                output_project=str(output_project))
 
     assert result["ok"] is False
-    assert result["output_project"] is None
-    assert "disk full" in result["error"]
+    assert "without saving" in result["error"]
+    assert not output_project.exists()
+    assert sorted(os.listdir(tmp_path)) == ["project.arm"]
 
 
-def test_decimate_mesh_removes_stale_copy_on_script_failure(tmp_path):
-    """Cross-task finding: when run_minic_script fails after the copy was
-    already made at output_project, the stale copy (still containing the
-    ORIGINAL unedited project) used to be left on disk while the tool
-    reported output_project: None -- indistinguishable from a normal, valid
-    .arm file to anyone who found it later. The copy must be cleaned up on
-    failure when in_place=False (never touched when in_place=True, since
-    target there IS the caller's own project)."""
+def test_decimate_mesh_timeout_after_a_complete_write_is_a_failure(tmp_path):
+    """Review Focus 5: the spike saw a run hang to its timeout after saving a
+    complete file. The timeout wins; the fresh file must not survive."""
     project = tmp_path / "project.arm"
-    project.write_bytes(b"fake")
+    project.write_bytes(b"original")
     output_project = tmp_path / "out.arm"
+
+    def wrote_then_timed_out(binary, project_, script, timeout_s):
+        with open(_fresh_path_in(script), "wb") as fh:
+            fh.write(b"complete")
+        return ScriptResult(ok=False, stdout="", stderr="",
+                            error="'--script' timed out after 30.0s")
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script", side_effect=wrote_then_timed_out):
+        _cfg(mock_cfg)
+        result = decimate_mesh(project=str(project), strength=0.5,
+                               output_project=str(output_project))
+
+    assert result["ok"] is False
+    assert "timed out" in result["error"]
+    assert sorted(os.listdir(tmp_path)) == ["project.arm"]
+
+
+def test_decimate_mesh_in_place_replaces_the_project_only_after_success(tmp_path):
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"original")
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script", side_effect=_saving_run()):
+        _cfg(mock_cfg)
+        result = decimate_mesh(project=str(project), strength=0.5, in_place=True)
+
+    assert result == {"ok": True, "output_project": str(project), "error": None}
+    assert project.read_bytes() == b"edited"
+    assert os.listdir(tmp_path) == ["project.arm"]
+
+
+def test_decimate_mesh_ignores_a_leftover_fresh_sibling_from_a_crashed_run(tmp_path):
+    """Review Focus 3."""
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"original")
+    stranger = tmp_path / "out.ap-mcp-0123456789ab.tmp.arm"
+    stranger.write_bytes(b"old crash")
+    output_project = tmp_path / "out.arm"
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script", side_effect=_saving_run()):
+        _cfg(mock_cfg)
+        result = decimate_mesh(project=str(project), strength=0.5,
+                               output_project=str(output_project))
+
+    assert result["ok"] is True
+    assert stranger.read_bytes() == b"old crash"
+
+
+def test_decimate_mesh_rejects_a_target_path_minic_cannot_carry(tmp_path):
+    """A '"' can't reach minic: Windows refuses it in a directory name
+    (makedirs fails) and minic_path_literal refuses it in the literal.
+    Either way: a clean failure, and ArmorPaint never launches."""
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"original")
 
     with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
          patch("armorpaint_mcp.server.run_minic_script") as mock_run:
-        mock_cfg.return_value.binary = "ArmorPaint.exe"
-        mock_cfg.return_value.allowed_roots = []
-        mock_run.return_value = ScriptResult(
-            ok=False, stdout="", stderr="", error="'--script' exited 1")
+        _cfg(mock_cfg)
+        result = decimate_mesh(project=str(project), strength=0.5,
+                               output_project=str(tmp_path / 'we"ird' / "out.arm"))
 
+    assert result["ok"] is False
+    assert result["output_project"] is None
+    mock_run.assert_not_called()
+
+
+def test_decimate_mesh_converts_a_replace_failure_to_a_clean_error(tmp_path):
+    project = tmp_path / "project.arm"
+    project.write_bytes(b"original")
+    output_project = tmp_path / "out.arm"
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script", side_effect=_saving_run()), \
+         patch("armorpaint_mcp.server.os.replace", side_effect=OSError("disk full")):
+        _cfg(mock_cfg)
         result = decimate_mesh(project=str(project), strength=0.5,
                                output_project=str(output_project))
 
     assert result["ok"] is False
-    assert result["output_project"] is None
-    # The real assertion: shutil.copy2 really ran for real (this is not
-    # mocked), so this proves the copy was actually cleaned up, not just
-    # that the mock was never called.
-    assert not output_project.exists()
+    assert "disk full" in result["error"]
+    assert sorted(os.listdir(tmp_path)) == ["project.arm"]
 
 
 def test_decimate_mesh_in_place_failure_does_not_delete_project(tmp_path):
@@ -697,6 +797,7 @@ def test_decimate_mesh_in_place_failure_does_not_delete_project(tmp_path):
 
     assert result["ok"] is False
     assert project.exists()
+    assert project.read_bytes() == b"fake"
 
 
 def test_bevel_mesh_calls_the_right_minic_function(tmp_path):
@@ -708,7 +809,7 @@ def test_bevel_mesh_calls_the_right_minic_function(tmp_path):
          patch("armorpaint_mcp.server.run_minic_script") as mock_run:
         mock_cfg.return_value.binary = "ArmorPaint.exe"
         mock_cfg.return_value.allowed_roots = []
-        mock_run.return_value = ScriptResult(ok=True, stdout="", stderr="")
+        mock_run.side_effect = _saving_run()
 
         result = bevel_mesh(project=str(project), amount=0.1,
                             output_project=str(output_project))
@@ -726,7 +827,7 @@ def test_subdivide_mesh_calls_the_right_minic_function(tmp_path):
          patch("armorpaint_mcp.server.run_minic_script") as mock_run:
         mock_cfg.return_value.binary = "ArmorPaint.exe"
         mock_cfg.return_value.allowed_roots = []
-        mock_run.return_value = ScriptResult(ok=True, stdout="", stderr="")
+        mock_run.side_effect = _saving_run()
 
         result = subdivide_mesh(project=str(project), output_project=str(output_project))
 
@@ -757,7 +858,7 @@ def test_smooth_mesh_calls_the_right_minic_function(tmp_path):
          patch("armorpaint_mcp.server.run_minic_script") as mock_run:
         mock_cfg.return_value.binary = "ArmorPaint.exe"
         mock_cfg.return_value.allowed_roots = []
-        mock_run.return_value = ScriptResult(ok=True, stdout="", stderr="")
+        mock_run.side_effect = _saving_run()
 
         result = smooth_mesh(project=str(project), output_project=str(output_project))
 
@@ -774,7 +875,7 @@ def test_duplicate_mesh_calls_the_right_minic_function(tmp_path):
          patch("armorpaint_mcp.server.run_minic_script") as mock_run:
         mock_cfg.return_value.binary = "ArmorPaint.exe"
         mock_cfg.return_value.allowed_roots = []
-        mock_run.return_value = ScriptResult(ok=True, stdout="", stderr="")
+        mock_run.side_effect = _saving_run()
 
         result = duplicate_mesh(project=str(project), output_project=str(output_project))
 
@@ -830,7 +931,7 @@ def test_merge_mesh_geometry_calls_the_right_minic_function_when_enough_objects(
         mock_cfg.return_value.binary = "ArmorPaint.exe"
         mock_cfg.return_value.allowed_roots = []
         mock_api.return_value = ApiResult(ok=True, text=api_text)
-        mock_run.return_value = ScriptResult(ok=True, stdout="", stderr="")
+        mock_run.side_effect = _saving_run()
 
         result = merge_mesh_geometry(project=str(project), output_project=str(output_project))
 
@@ -853,7 +954,7 @@ def test_unwrap_mesh_uvs_calls_the_right_minic_function(tmp_path):
          patch("armorpaint_mcp.server.run_minic_script") as mock_run:
         mock_cfg.return_value.binary = "ArmorPaint.exe"
         mock_cfg.return_value.allowed_roots = []
-        mock_run.return_value = ScriptResult(ok=True, stdout="", stderr="")
+        mock_run.side_effect = _saving_run()
 
         result = unwrap_mesh_uvs(project=str(project), output_project=str(output_project))
 
@@ -865,3 +966,531 @@ def test_unwrap_mesh_uvs_is_registered_as_an_mcp_tool():
     tools = asyncio.run(mcp.list_tools())
     by_name = {t.name: t for t in tools}
     assert "unwrap_mesh_uvs" in by_name, sorted(by_name)
+
+
+QUAD_OBJ = ("o Quad\nv 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\n"
+            "vt 0 0\nvt 1 0\nvt 1 1\nvt 0 1\nf 1/1 2/2 3/3\nf 1/1 3/3 4/4\n")
+
+
+def _exporting_run(obj_text):
+    def fake(binary, project, script, timeout_s):
+        path = re.search(r'script_export_mesh\("([^"]+)"\);', script).group(1)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(obj_text)
+        return ScriptResult(ok=True, stdout="", stderr="")
+    return fake
+
+
+def test_check_mesh_uvs_reports_per_object_verdicts(tmp_path):
+    project = tmp_path / "p.arm"
+    project.write_bytes(b"x")
+    bad = QUAD_OBJ.replace("vt 1 1", "vt 1.5 1")
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script", side_effect=_exporting_run(bad)):
+        _cfg(mock_cfg)
+        result = check_mesh_uvs(str(project))
+        relaxed = check_mesh_uvs(str(project), allow_udim=True)
+
+    assert result["ok"] is True and result["error"] is None
+    assert result["valid"] is False
+    (obj,) = result["objects"]
+    assert obj["name"] == "Quad" and obj["valid"] is False
+    assert "coverage_pct" in obj["metrics"]
+    assert relaxed["valid"] is True
+
+
+def test_check_mesh_uvs_fails_cleanly_when_the_export_never_appears(tmp_path):
+    project = tmp_path / "p.arm"
+    project.write_bytes(b"x")
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script",
+               return_value=ScriptResult(ok=True, stdout="", stderr="")):
+        _cfg(mock_cfg)
+        result = check_mesh_uvs(str(project))
+
+    assert result == {"ok": False, "error": result["error"], "valid": None, "objects": None}
+    assert "mesh export" in result["error"]
+
+
+def test_check_mesh_uvs_rejects_a_non_arm_path(tmp_path):
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg:
+        _cfg(mock_cfg)
+        result = check_mesh_uvs(str(tmp_path / "nope.arm"))
+    assert result["ok"] is False and result["objects"] is None
+
+
+def test_check_mesh_uvs_is_registered_as_an_mcp_tool():
+    by_name = {t.name: t for t in asyncio.run(mcp.list_tools())}
+    tool = by_name["check_mesh_uvs"]
+    assert set(tool.input_schema["properties"]) == {"project", "allow_udim", "timeout_s"}
+    assert set(tool.input_schema.get("required", [])) == {"project"}
+
+
+STATE_BEFORE = {"mesh_datas": [{"name": "Tessellated"}, {"name": "Cone"}],
+                "mesh_transforms": [[1.0] * 16, [2.0] * 16], "mesh_parents[i32]": [-1, -1],
+                "mesh_materials[i32]": [-1, -1], "material_nodes": [{"name": "Material"}],
+                "layer_datas": [{"name": "Layer"}]}
+
+
+def test_replace_mesh_rejects_an_unknown_mode(tmp_path):
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg:
+        _cfg(mock_cfg)
+        result = replace_mesh(str(tmp_path / "p.arm"), "Cone", str(tmp_path / "g.obj"),
+                              mode="merge", output_project=str(tmp_path / "o.arm"))
+    assert result["ok"] is False and "mode" in result["error"]
+    assert set(result) == {"ok", "output_project", "iou", "retention", "warnings", "error"}
+
+
+def test_replace_mesh_rejects_a_missing_old_object_before_launching_the_script(tmp_path):
+    project = tmp_path / "p.arm"
+    project.write_bytes(b"x")
+    mesh = tmp_path / "g.obj"
+    mesh.write_text("o G\nv 0 0 0\nv 1 0 0\nv 1 1 0\nvt 0 0\nvt 1 0\nvt 1 1\nf 1/1 2/2 3/3\n")
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server._project_state", return_value=(STATE_BEFORE, None)), \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
+        _cfg(mock_cfg)
+        result = replace_mesh(str(project), "Nope", str(mesh), mode="swap",
+                              output_project=str(tmp_path / "o.arm"))
+    assert result["ok"] is False and "Nope" in result["error"]
+    mock_run.assert_not_called()
+
+
+def test_replace_mesh_rejects_an_old_object_name_minic_cannot_carry(tmp_path):
+    """Review Focus 2."""
+    project = tmp_path / "p.arm"
+    project.write_bytes(b"x")
+    mesh = tmp_path / "g.glb"
+    mesh.write_bytes(b"glb")
+    state = dict(STATE_BEFORE, mesh_datas=[{"name": "Tessellated"}, {"name": 'Co"ne'}])
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server._project_state", return_value=(state, None)), \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
+        _cfg(mock_cfg)
+        result = replace_mesh(str(project), 'Co"ne', str(mesh), mode="swap",
+                              output_project=str(tmp_path / "o.arm"))
+    assert result["ok"] is False and "double quote" in result["error"]
+    mock_run.assert_not_called()
+
+
+def test_replace_mesh_turns_a_marker_into_a_readable_error_and_leaves_nothing(tmp_path):
+    project = tmp_path / "p.arm"
+    project.write_bytes(b"x")
+    mesh = tmp_path / "g.blend"
+    mesh.write_bytes(b"blend")
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server._project_state", return_value=(STATE_BEFORE, None)), \
+         patch("armorpaint_mcp.server._export_obj", return_value=("o Cone\n", None)), \
+         patch("armorpaint_mcp.server.run_minic_script",
+               return_value=ScriptResult(ok=True, stdout="REPLACE_ERR append_failed\n",
+                                         stderr="Blender executable path not set\n")):
+        _cfg(mock_cfg)
+        result = replace_mesh(str(project), "Cone", str(mesh), mode="swap",
+                              output_project=str(tmp_path / "o.arm"))
+    assert result["ok"] is False
+    assert "append_failed" in result["error"] and "Blender executable path not set" in result["error"]
+    assert sorted(os.listdir(tmp_path)) == ["g.blend", "p.arm"]
+
+
+def test_replace_mesh_rejects_a_duplicate_old_object_name_before_launching_the_script(tmp_path):
+    """Controller ruling 1: two objects named the same as old_object must
+    fail closed before the replace script ever runs -- minic's
+    script_get_object and this module's own by-name lookups could otherwise
+    pick different objects and silently mis-restore state."""
+    project = tmp_path / "p.arm"
+    project.write_bytes(b"x")
+    mesh = tmp_path / "g.obj"
+    mesh.write_text("o G\nv 0 0 0\nv 1 0 0\nv 1 1 0\nvt 0 0\nvt 1 0\nvt 1 1\nf 1/1 2/2 3/3\n")
+    state = dict(STATE_BEFORE, mesh_datas=[{"name": "Cone"}, {"name": "Cone"}])
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server._project_state", return_value=(state, None)), \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
+        _cfg(mock_cfg)
+        result = replace_mesh(str(project), "Cone", str(mesh), mode="swap",
+                              output_project=str(tmp_path / "o.arm"))
+    assert result["ok"] is False
+    assert "Cone" in result["error"] and "2" in result["error"]
+    mock_run.assert_not_called()
+
+
+def test_replace_mesh_never_raises_on_malformed_state_in_the_pre_run_block(tmp_path):
+    """Controller ruling 2: a malformed --api state must return a clean
+    _replace_failure, never an uncaught KeyError/IndexError/TypeError, out of
+    the pre-run rp.* lookups."""
+    project = tmp_path / "p.arm"
+    project.write_bytes(b"x")
+    mesh = tmp_path / "g.obj"
+    mesh.write_text("o G\nv 0 0 0\nv 1 0 0\nv 1 1 0\nvt 0 0\nvt 1 0\nvt 1 1\nf 1/1 2/2 3/3\n")
+    # "Cone" (index 1) has a material index (5) out of range for
+    # material_nodes (length 1) -- material_override_name's nodes[idx]
+    # lookup raises IndexError on state this malformed.
+    state = dict(STATE_BEFORE, **{"mesh_materials[i32]": [-1, 5]})
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server._project_state", return_value=(state, None)), \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
+        _cfg(mock_cfg)
+        result = replace_mesh(str(project), "Cone", str(mesh), mode="swap",
+                              output_project=str(tmp_path / "o.arm"))
+    assert result["ok"] is False
+    assert "unexpected project state" in result["error"]
+    mock_run.assert_not_called()
+
+
+def test_replace_mesh_never_raises_on_malformed_state_in_the_post_verify_block(tmp_path):
+    """Controller ruling 2: same guarantee for the post-verify rp.* lookups
+    against the AFTER state, and the fresh temp file is still cleaned up."""
+    project = tmp_path / "p.arm"
+    project.write_bytes(b"x")
+    mesh = tmp_path / "g.obj"
+    mesh.write_text("o G\nv 0 0 0\nv 1 0 0\nv 1 1 0\nvt 0 0\nvt 1 0\nvt 1 1\nf 1/1 2/2 3/3\n")
+    # After state has only ONE mesh_transform for two objects -- local_transform's
+    # state["mesh_transforms"][_index(...)] raises IndexError for the second name.
+    after_state = dict(STATE_BEFORE, mesh_transforms=[[1.0] * 16])
+
+    def _fake_run(binary, project_path, script, timeout_s):
+        # The script's project_save() writes the fresh sibling for real so
+        # _run_saving_script's own file-existence check passes.
+        for line in script.splitlines():
+            if "project_filepath_set(" in line:
+                fresh_path = line.split('"')[1]
+                with open(fresh_path, "wb") as fh:
+                    fh.write(b"fresh")
+                break
+        return ScriptResult(ok=True, stdout="", stderr="")
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server._project_state",
+               side_effect=[(STATE_BEFORE, None), (after_state, None)]), \
+         patch("armorpaint_mcp.server._export_obj", return_value=("o Cone\no Tessellated\n", None)), \
+         patch("armorpaint_mcp.server.run_minic_script", side_effect=_fake_run):
+        _cfg(mock_cfg)
+        result = replace_mesh(str(project), "Cone", str(mesh), mode="swap",
+                              output_project=str(tmp_path / "o.arm"))
+    assert result["ok"] is False
+    assert "unexpected project state" in result["error"]
+    # No leftover .tmp.arm fresh sibling, and output_project was never written.
+    assert sorted(os.listdir(tmp_path)) == ["g.obj", "p.arm"]
+
+
+def test_replace_mesh_never_raises_when_the_after_state_has_duplicate_material_names(tmp_path):
+    """Fix round 1 (task-8-fix1-findings.md #1): rp.material_override_name(after,
+    old_object) raises rp.ReplaceError when the AFTER state's material_nodes has
+    a duplicated name for the object's material index (e.g. an appended
+    glb/fbx/blend import that happens to clash with an existing material name).
+    The post-verify except tuple must catch this too, and still clean up the
+    fresh temp file."""
+    project = tmp_path / "p.arm"
+    project.write_bytes(b"x")
+    mesh = tmp_path / "g.obj"
+    mesh.write_text("o G\nv 0 0 0\nv 1 0 0\nv 1 1 0\nvt 0 0\nvt 1 0\nvt 1 1\nf 1/1 2/2 3/3\n")
+    # AFTER: "Cone" (index 1) now points at material index 0, and
+    # material_nodes has two entries both named "Mat" -- material_override_name
+    # can't tell them apart and raises ReplaceError instead of a name.
+    after_state = dict(STATE_BEFORE, **{
+        "mesh_materials[i32]": [-1, 0],
+        "material_nodes": [{"name": "Mat"}, {"name": "Mat"}],
+    })
+
+    def _fake_run(binary, project_path, script, timeout_s):
+        for line in script.splitlines():
+            if "project_filepath_set(" in line:
+                fresh_path = line.split('"')[1]
+                with open(fresh_path, "wb") as fh:
+                    fh.write(b"fresh")
+                break
+        return ScriptResult(ok=True, stdout="", stderr="")
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server._project_state",
+               side_effect=[(STATE_BEFORE, None), (after_state, None)]), \
+         patch("armorpaint_mcp.server._export_obj", return_value=("o Cone\no Tessellated\n", None)), \
+         patch("armorpaint_mcp.server.run_minic_script", side_effect=_fake_run):
+        _cfg(mock_cfg)
+        result = replace_mesh(str(project), "Cone", str(mesh), mode="swap",
+                              output_project=str(tmp_path / "o.arm"))
+    assert result["ok"] is False
+    # No leftover .tmp.arm fresh sibling, and output_project was never written.
+    assert sorted(os.listdir(tmp_path)) == ["g.obj", "p.arm"]
+
+
+def test_replace_mesh_is_registered_as_an_mcp_tool():
+    by_name = {t.name: t for t in asyncio.run(mcp.list_tools())}
+    tool = by_name["replace_mesh"]
+    assert set(tool.input_schema["properties"]) == {
+        "project", "old_object", "new_mesh", "mode", "allow_udim",
+        "output_project", "in_place", "timeout_s"}
+    assert set(tool.input_schema.get("required", [])) == {"project", "old_object", "new_mesh"}
+
+
+def test_uv_gate_passes_a_round_trip_and_reports_numbers():
+    gate, error = server._replace_uv_gate(_fixture_text("base"), _fixture_text("r5_decimate"),
+                                          "Base", "round_trip", False, 1)
+    assert error is None
+    assert gate["iou"] >= ua.IOU_MIN and gate["retention"] >= ua.RETENTION_MIN
+
+
+def test_uv_gate_fails_a_re_unwrap_on_iou_in_round_trip_mode():
+    gate, error = server._replace_uv_gate(_fixture_text("base"), _fixture_text("d1_smartuv45"),
+                                          "Base", "round_trip", False, 1)
+    assert error is not None and "IoU" in error
+
+
+def test_uv_gate_fails_a_coverage_preserving_scramble_on_retention():
+    gate, error = server._replace_uv_gate(_fixture_text("base"), _fixture_text("d4_swap"),
+                                          "Base", "round_trip", False, 1)
+    assert error is not None and "retention" in error
+
+
+def test_uv_gate_swap_mode_reports_but_does_not_enforce():
+    gate, error = server._replace_uv_gate(_fixture_text("base"), _fixture_text("d4_swap"),
+                                          "Base", "swap", False, 1)
+    assert error is None
+    assert gate["retention"] < ua.RETENTION_MIN
+
+
+def test_uv_gate_warns_about_reimport_on_multi_object_projects():
+    gate, error = server._replace_uv_gate(_fixture_text("base"), _fixture_text("r8_scaled"),
+                                          "Base", "swap", False, 3)
+    assert error is None
+    assert any("Reimport Mesh" in w for w in gate["warnings"])
+
+
+def test_uv_gate_warns_when_the_replacement_is_far_off_the_old_size():
+    scaled = "\n".join(
+        ("v " + " ".join(str(float(c) * 100) for c in line.split()[1:4]))
+        if line.startswith("v ") else line
+        for line in _fixture_text("base").splitlines())
+    gate, error = server._replace_uv_gate(_fixture_text("base"), scaled, "Base", "swap", False, 1)
+    assert error is None
+    assert any("100" in w and "size" in w for w in gate["warnings"])
+
+
+def test_uv_gate_rejects_invalid_replacement_uvs_in_either_mode():
+    no_uv = "o Base\nv 0 0 0\nv 1 0 0\nv 1 1 0\nf 1 2 3\n"
+    for mode in ("round_trip", "swap"):
+        _, error = server._replace_uv_gate(_fixture_text("base"), no_uv, "Base", mode, False, 1)
+        assert error is not None and "no UVs" in error
+
+
+# --- Final-review C1 / Known Issue #12: non-ASCII argv paths -------------------
+
+TRI_OBJ = "o G\nv 0 0 0\nv 1 0 0\nv 1 1 0\nvt 0 0\nvt 1 0\nvt 1 1\nf 1/1 2/2 3/3\n"
+
+
+def _argv_case_setup(tmp_path, project_dir: str):
+    """A real .arm file (so the guard, not the existence check, rejects) in
+    `project_dir` under tmp_path, plus an ASCII replacement mesh."""
+    d = tmp_path / project_dir
+    d.mkdir(exist_ok=True)
+    project = d / "p.arm"
+    project.write_bytes(b"x")
+    mesh = tmp_path / "g.obj"
+    mesh.write_text(TRI_OBJ)
+    return str(project), str(mesh)
+
+
+_NON_ASCII_CASES = {
+    # every tool that hands `project` to ArmorPaint on the command line
+    "decimate_mesh": lambda p, m, t: decimate_mesh(p, 0.5, output_project=str(t / "o.arm")),
+    "bevel_mesh": lambda p, m, t: bevel_mesh(p, 0.1, output_project=str(t / "o.arm")),
+    "subdivide_mesh": lambda p, m, t: subdivide_mesh(p, output_project=str(t / "o.arm")),
+    "smooth_mesh": lambda p, m, t: smooth_mesh(p, output_project=str(t / "o.arm")),
+    "duplicate_mesh": lambda p, m, t: duplicate_mesh(p, output_project=str(t / "o.arm")),
+    "unwrap_mesh_uvs": lambda p, m, t: unwrap_mesh_uvs(p, output_project=str(t / "o.arm")),
+    "decimate_mesh_in_place": lambda p, m, t: decimate_mesh(p, 0.5, in_place=True),
+    "merge_mesh_geometry": lambda p, m, t: merge_mesh_geometry(p, output_project=str(t / "o.arm")),
+    "check_mesh_uvs": lambda p, m, t: check_mesh_uvs(p),
+    "inspect_project": lambda p, m, t: inspect_project(p),
+    "run_script": lambda p, m, t: run_script(p, "void main() {}\n"),
+    "replace_mesh": lambda p, m, t: replace_mesh(p, "Cone", m, mode="swap",
+                                                 output_project=str(t / "o.arm")),
+    "reexport_project": lambda p, m, t: reexport_project(p, "generic", str(t / "tex")),
+}
+
+
+@pytest.mark.parametrize("tool", sorted(_NON_ASCII_CASES))
+def test_a_non_ascii_project_path_is_rejected_before_any_launch(tmp_path, tool):
+    project, mesh = _argv_case_setup(tmp_path, "\u00d8")
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.list_export_presets", return_value=["generic"]), \
+         patch("armorpaint_mcp.server.run_api") as mock_api, \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run, \
+         patch("armorpaint_mcp.server.export_textures") as mock_export:
+        _cfg(mock_cfg)
+        result = _NON_ASCII_CASES[tool](project, mesh, tmp_path)
+
+    assert result["ok"] is False
+    assert project in result["error"] and "ASCII" in result["error"]
+    assert all(v is None for k, v in result.items() if k not in ("ok", "error"))
+    mock_api.assert_not_called()
+    mock_run.assert_not_called()
+    mock_export.assert_not_called()
+    assert not (tmp_path / "o.arm").exists() and not (tmp_path / "tex").exists()
+
+
+def test_replace_mesh_rejects_a_non_ascii_output_project_before_creating_anything(tmp_path):
+    project, mesh = _argv_case_setup(tmp_path, "ascii dir")
+    out = tmp_path / "\u00d8 out" / "o.arm"
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_api") as mock_api, \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
+        _cfg(mock_cfg)
+        result = replace_mesh(project, "Cone", mesh, mode="swap", output_project=str(out))
+
+    assert result["ok"] is False
+    assert str(out) in result["error"] and "ASCII" in result["error"]
+    assert set(result) == {"ok", "output_project", "iou", "retention", "warnings", "error"}
+    mock_api.assert_not_called()
+    mock_run.assert_not_called()
+    assert not out.parent.exists()
+
+
+def test_reexport_project_rejects_a_non_ascii_output_dir(tmp_path):
+    project, _ = _argv_case_setup(tmp_path, "ascii dir")
+    out = tmp_path / "\u00d8 tex"
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.list_export_presets", return_value=["generic"]), \
+         patch("armorpaint_mcp.server.export_textures") as mock_export:
+        _cfg(mock_cfg)
+        result = reexport_project(project, "generic", str(out))
+
+    assert result == {"ok": False, "error": result["error"], "files": None}
+    assert str(out) in result["error"] and "ASCII" in result["error"]
+    mock_export.assert_not_called()
+
+
+def test_mesh_edit_output_project_may_be_non_ascii(tmp_path):
+    """The mesh edits' output path travels inside the UTF-8 script file, not
+    argv, so it is deliberately not guarded."""
+    project, _ = _argv_case_setup(tmp_path, "ascii dir")
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server._run_saving_script",
+               return_value=ScriptResult(ok=False, stdout="", stderr="", error="boom")) as mock_run:
+        _cfg(mock_cfg)
+        result = subdivide_mesh(project, output_project=str(tmp_path / "\u00d8" / "o.arm"))
+    assert result["error"] == "boom"
+    mock_run.assert_called_once()
+
+
+def test_an_ascii_path_with_spaces_passes_the_argv_guard(tmp_path):
+    project, _ = _argv_case_setup(tmp_path, "dir with spaces")
+    assert server._argv_path_error(project, "project") is None
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script",
+               return_value=ScriptResult(ok=True, stdout="hi", stderr="")) as mock_run:
+        _cfg(mock_cfg)
+        result = run_script(project, "void main() {}\n")
+    assert result["ok"] is True
+    mock_run.assert_called_once()
+
+
+# --- Final-review I2 / I3 / M1 / M2 --------------------------------------------
+
+_MALFORMED_OBJS = {
+    # a face referencing texture coordinates that don't exist -> IndexError
+    "face_references_missing_vt": "o G\nv 0 0 0\nv 1 0 0\nv 1 1 0\nvt 0 0\nvt 1 0\nvt 1 1\n"
+                                  "f 1/4 2/5 3/6\n",
+    # a `v` line with only two coordinates -> IndexError
+    "two_coordinate_vertex": "o G\nv 0 0\nv 1 0 0\nv 1 1 0\nvt 0 0\nvt 1 0\nvt 1 1\n"
+                             "f 1/1 2/2 3/3\n",
+    # a non-numeric token -> ValueError
+    "non_numeric_token": "o G\nv 0 a 0\nv 1 0 0\nv 1 1 0\nvt 0 0\nvt 1 0\nvt 1 1\n"
+                         "f 1/1 2/2 3/3\n",
+}
+
+
+@pytest.mark.parametrize("shape", sorted(_MALFORMED_OBJS))
+def test_replace_mesh_never_raises_on_a_malformed_replacement_obj(tmp_path, shape):
+    project = tmp_path / "p.arm"
+    project.write_bytes(b"x")
+    mesh = tmp_path / "g.obj"
+    mesh.write_text(_MALFORMED_OBJS[shape])
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_api") as mock_api, \
+         patch("armorpaint_mcp.server.run_minic_script") as mock_run:
+        _cfg(mock_cfg)
+        result = replace_mesh(str(project), "Cone", str(mesh), mode="swap",
+                              output_project=str(tmp_path / "o.arm"))
+    assert result["ok"] is False
+    assert result["error"].startswith("could not read new_mesh as OBJ: ")
+    assert all(result[k] is None for k in ("output_project", "iou", "retention", "warnings"))
+    mock_api.assert_not_called()
+    mock_run.assert_not_called()
+
+
+def test_replace_mesh_keeps_a_replace_error_s_own_message(tmp_path):
+    project = tmp_path / "p.arm"
+    project.write_bytes(b"x")
+    mesh = tmp_path / "g.obj"
+    mesh.write_text("o G\nv 0 0 0\nv 1 0 0\nv 1 1 0\nf 1 2 3\n")
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg:
+        _cfg(mock_cfg)
+        result = replace_mesh(str(project), "Cone", str(mesh), mode="swap",
+                              output_project=str(tmp_path / "o.arm"))
+    assert result["ok"] is False
+    assert result["error"].startswith("the replacement OBJ has no UVs")
+
+
+def test_check_mesh_uvs_fails_when_the_export_has_no_faces(tmp_path):
+    project = tmp_path / "p.arm"
+    project.write_bytes(b"x")
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script",
+               side_effect=_exporting_run("o Empty\nv 0 0 0\n")):
+        _cfg(mock_cfg)
+        result = check_mesh_uvs(str(project))
+    assert result == {"ok": False, "error": "export contained no objects with faces",
+                      "valid": None, "objects": None}
+
+
+def test_check_mesh_uvs_never_raises_on_a_malformed_export(tmp_path):
+    project = tmp_path / "p.arm"
+    project.write_bytes(b"x")
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.run_minic_script",
+               side_effect=_exporting_run("o Bad\nv 0 0\nv 1 0 0\nv 1 1 0\nf 1 2 3\n")):
+        _cfg(mock_cfg)
+        result = check_mesh_uvs(str(project))
+    assert result["ok"] is False and result["valid"] is None and result["objects"] is None
+    assert result["error"].startswith("could not analyze the mesh export: ")
+
+
+def test_check_mesh_uvs_never_raises_when_temp_cleanup_fails(tmp_path):
+    project = tmp_path / "p.arm"
+    project.write_bytes(b"x")
+
+    class _Tmp:
+        def __init__(self, *a, **kw):
+            self.name = str(tmp_path / "t")
+            os.makedirs(self.name)
+
+        def __enter__(self):
+            return self.name
+
+        def __exit__(self, *exc):
+            raise PermissionError("in use")
+
+    with patch("armorpaint_mcp.server._ensure_ready") as mock_cfg, \
+         patch("armorpaint_mcp.server.tempfile.TemporaryDirectory", _Tmp), \
+         patch("armorpaint_mcp.server.run_minic_script", side_effect=_exporting_run(QUAD_OBJ)):
+        _cfg(mock_cfg)
+        result = check_mesh_uvs(str(project))
+    assert result["ok"] is False and "in use" in result["error"]
+
+
+STACKED_OBJ = ("o Base\nv 0 0 0\nv 1 0 0\nv 0 1 0\nv 0 0 1\nv 1 0 1\nv 0 1 1\n"
+               "vt 0.1 0.1\nvt 0.9 0.1\nvt 0.1 0.9\nf 1/1 2/2 3/3\nf 4/1 5/2 6/3\n")
+
+
+def test_uv_gate_warns_when_retention_is_not_assessable_in_round_trip_mode():
+    gate, error = server._replace_uv_gate(STACKED_OBJ, STACKED_OBJ, "Base", "round_trip", False, 1)
+    assert error is None
+    assert gate["retention"] is None and gate["iou"] == 1.0
+    assert ("texel retention not assessable (fully overlapping UVs); round_trip verified "
+            "by IoU only") in gate["warnings"]
+
+
+def test_uv_gate_swap_mode_does_not_add_the_retention_warning():
+    gate, error = server._replace_uv_gate(STACKED_OBJ, STACKED_OBJ, "Base", "swap", False, 1)
+    assert error is None
+    assert not any("retention not assessable" in w for w in gate["warnings"])

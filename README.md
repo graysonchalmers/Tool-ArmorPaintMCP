@@ -24,15 +24,19 @@ Amendment 3 for what changed and, just as importantly, what didn't
 
 ## Status
 
-**Alpha — v1 tool surface + Phase 5 mesh/UV editing tools shipped.** 12
-tools total: v1's five (`reexport_project`, `create_procedural_material`,
-`list_available_presets`, `inspect_project`, `run_script`) plus Phase 5's
-seven mesh/UV editing tools (`decimate_mesh`, `bevel_mesh`, `subdivide_mesh`,
-`smooth_mesh`, `duplicate_mesh`, `merge_mesh_geometry`, `unwrap_mesh_uvs`),
-all implemented, tested, and gated. See [docs/PLAN.md](docs/PLAN.md) for the
-phase plan and [STATUS.md](STATUS.md) for the gate ledger. Live/interactive
-"live mode" is deferred, not shipped — see the design spec's "Deferred: live
-mode" section.
+**Alpha — v1 tool surface + Phase 5 mesh/UV editing tools + Phase 6
+hardening/UV-check/mesh-replace shipped.** 14 tools total: v1's five
+(`reexport_project`, `create_procedural_material`, `list_available_presets`,
+`inspect_project`, `run_script`) plus Phase 5's seven mesh/UV editing tools
+(`decimate_mesh`, `bevel_mesh`, `subdivide_mesh`, `smooth_mesh`,
+`duplicate_mesh`, `merge_mesh_geometry`, `unwrap_mesh_uvs`) plus Phase 6's
+two (`check_mesh_uvs`, `replace_mesh`), all implemented, tested, and gated.
+Every tool now returns `ok=False` (not a silent `ok=True` against an
+unedited copy) when a minic script errors — a `<script>:N: error: ...` line
+in stdout is treated as a failure, since stdout is capturable on this build.
+See [docs/PLAN.md](docs/PLAN.md) for the phase plan and
+[STATUS.md](STATUS.md) for the gate ledger. Live/interactive "live mode" is
+deferred, not shipped — see the design spec's "Deferred: live mode" section.
 
 ## Gallery
 
@@ -137,6 +141,28 @@ upstream as [armory3d/armorpaint#2139](https://github.com/armory3d/armorpaint/pu
 Run `ap-mcp --check` to confirm; v1's five tools work against older builds
 too.
 
+Phase 6 added two more tools on top of that same foundation, no further
+ArmorPaint patch needed. `check_mesh_uvs(project, allow_udim=False)` is a
+read-only UV validity report: it exports every object's mesh through
+ArmorPaint and analyzes the UVs entirely in this project's Python layer,
+making no changes to the project. Per object it flags errors (faces without
+UVs, UV-degenerate triangles covering more than 0.1% of the 3D surface,
+UVs outside [0,1] — downgraded to a warning with `allow_udim=True`) and
+warnings (overlapping UVs, flipped UV triangles), plus coverage/overlap
+metrics. `replace_mesh(project, old_object, new_mesh, mode="round_trip")`
+swaps one object's mesh for a new file (`obj`, `fbx`, `glb`, `gltf`, or
+`blend` — the last needs ArmorPaint's own Blender path configured in
+`data/config.json`) while keeping every layer, every other object, and the
+replaced object's name, transform, parent, children and material — unlike
+ArmorPaint's own mesh import, which clears every layer. Because paint lives
+in UV space, it only carries over unchanged if the new mesh keeps the old
+UV layout: `mode="round_trip"` (same asset, edited geometry, UVs kept)
+enforces a UV-coverage IoU >= 0.95 and >= 85% texel retention; `mode="swap"`
+(a genuinely different mesh) reports the same numbers without enforcing
+them, since paint scrambling is expected. Either mode rejects a replacement
+mesh with no UVs. Writes go to `output_project` by default, never `project`
+itself, and only after the result verifies.
+
 ## Requirements
 
 - **Python 3.10+** (developed on 3.13)
@@ -151,12 +177,12 @@ too.
     asset/shader export from `make.bat`) next to it or it access-violates on
     launch with zero log output. Copy the exe into `paint\build\out\` and
     run it from there.
-- **Mesh/UV editing tools need a recent build.** 7 of the 12 shipped tools
+- **Mesh/UV editing tools need a recent build.** 7 of the 14 shipped tools
   (`decimate_mesh`, `bevel_mesh`, `subdivide_mesh`, `smooth_mesh`,
   `duplicate_mesh`, `merge_mesh_geometry`, `unwrap_mesh_uvs` -- the Phase 5
   tools) need upstream `main` at or after `01bae6c5` (2026-09-17: the
   registrations from #2139, with the UV unwrap one renamed to
-  `util_mesh_uv_unwrap`). `ap-mcp --check` reports a clear "mesh-edit patch"
+  `util_mesh_uv_unwrap`). `ap-mcp --check` reports a clear "minic API"
   failure on an older build.
   - **Known upstream bug:** on stock upstream, `smooth_mesh` and `bevel_mesh`
     intermittently return corrupted geometry (uninitialized accumulator
@@ -201,12 +227,12 @@ pwsh smoke/smoke.ps1
 ```
 
 Headless proof the project is alive: package imports, `--version` and
-`--help` exit 0, and 10 of the 12 shipped tools (`reexport_project`,
-`inspect_project`, `run_script`, and the 7 mesh/UV editing tools) each have
-their own MCP-registration probe -- 13 probes total (3 base + those 10).
-`create_procedural_material` and `list_available_presets` are exercised by
-the unit/integration tests but don't have their own smoke probe yet. Each
-phase adds a probe here.
+`--help` exit 0, and 12 of the 14 shipped tools (`reexport_project`,
+`inspect_project`, `run_script`, the 7 mesh/UV editing tools, and Phase 6's
+`check_mesh_uvs`/`replace_mesh`) each have their own MCP-registration probe
+-- 15 probes total (3 base + those 12). `create_procedural_material` and
+`list_available_presets` are exercised by the unit/integration tests but
+don't have their own smoke probe yet. Each phase adds a probe here.
 
 ```bash
 pytest -q                # unit tests (fast, no ArmorPaint process)

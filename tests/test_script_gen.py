@@ -164,3 +164,35 @@ def test_generate_script_normalizes_windows_backslashes():
 def test_generate_script_rejects_path_containing_double_quote():
     with pytest.raises(NodeSpecError, match="double-quote"):
         generate_script({"type": "solid"}, 'C:/out/"; system("evil"); //')
+
+
+import os
+
+from armorpaint_mcp.script_gen import (NodeSpecError, minic_path_literal,
+                                       minic_string_literal)
+
+
+def test_minic_string_literal_quotes_plain_text():
+    assert minic_string_literal("Cone.001", "object name") == '"Cone.001"'
+
+
+@pytest.mark.parametrize("bad", ['a"b', "a\\b", "a\nb", "a\rb"])
+def test_minic_string_literal_rejects_characters_it_cannot_carry(bad):
+    with pytest.raises(NodeSpecError, match="object name"):
+        minic_string_literal(bad, "object name")
+
+
+def test_minic_path_literal_defaults_to_forward_slashes(tmp_path):
+    p = tmp_path / "Program Files (x86)" / "Ø" / "out.arm"
+    assert minic_path_literal(str(p), "output path") == '"' + str(p).replace("\\", "/") + '"'
+
+
+def test_minic_path_literal_doubles_backslashes_when_asked(tmp_path):
+    p = tmp_path / "new mesh.obj"
+    expected = '"' + str(p).replace("\\", "\\\\") + '"'
+    assert minic_path_literal(str(p), "mesh path", backslashes=True) == expected
+
+
+def test_minic_path_literal_rejects_a_double_quote(tmp_path):
+    with pytest.raises(NodeSpecError, match="mesh path"):
+        minic_path_literal(str(tmp_path / 'a"b.obj'), "mesh path")
