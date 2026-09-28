@@ -1,102 +1,69 @@
 # 🧭 Session Handoff — Tool-ArmorPaintMCP
 
-_Last updated: 2026-09-27 (late evening CDT, wrap-up: Phase 6 grill → spikes → plan → Task 1)_
+_Last updated: 2026-09-27 (late night CDT, wrap-up: Phase 6 executed + merged, Phase 7 approved + planned)_
 
 > The baton. Written by `wrap-up` at session end, read by `pickup` at session start.
 
 ## 🎯 Current state
 
-v1 (5 tools) and Phase 5 (7 mesh/UV tools) are green on `AP_BINARY` @ `287e63f4`
-(upstream `85f6cf1c` + the zero-init fix, open upstream as armory3d/armorpaint#2148,
-still unreviewed). **Phase 6 is approved and in execution** on branch
-`claude/phase6` in worktree `.claude\worktrees\phase6`:
-- Scope: rename hardening (stdout abort detection, `--check` covering every emitted
-  minic name) + Known Issues #10/#11 fixes, then `check_mesh_uvs` and `replace_mesh`.
-- Design: `docs/PLAN.md` "Phase 6 → Decisions applied", amended from spikes S1-S5.
-- Implementation plan: `docs/superpowers/plans/2026-09-27-phase6-hardening-uv-replace.md`
-  (11 tasks, on the branch).
-- Spike evidence: `docs/superpowers/spikes/`. Fixtures: `tests/fixtures/phase6/`
-  (MD5-pinned; the `uv/` set can't be regenerated).
-- Phase 7 (3 upstream C changes + targeted merge) is drafted, not approved.
+**Phase 6 is ✅ gate green and merged into `main` (`c23f437`, pushed).**
+- It shipped `check_mesh_uvs` and `replace_mesh`, fixed Known Issues #10 and #11, made script errors fail tools, and made `--check` cover all 34 emitted minic names.
+- Evidence on `main`: unit tests 230 passed; integration 38/38 across 15 files (two first-run flakes passed on rerun); smoke 15/15; `--check` green.
+- Known Issue #12 (non-ASCII paths on ArmorPaint's command line) is mitigated with a pre-launch ASCII guard.
+
+**Phase 7 is approved (`36262e1`), and its 16-task plan is committed (`ce03241`):** `docs/superpowers/plans/2026-09-27-phase7-c-changes-merge-pair.md`.
+- Execution has started in worktree `.claude\worktrees\phase7` (branch `claude/phase7`, still equal to `main`).
+- `AP_BINARY` is still built from `287e63f4` (#2148, not yet reviewed upstream).
 
 ## 📌 Where we stopped
 
-Subagent-driven execution, **Task 1 of 11**:
-- Implemented and committed: `9070a14`. Minic `<script>:N: error:` lines now fail
-  `run_minic_script`.
-- Review approved it with 2 Important findings.
-- Fix round 1 was dispatched, then interrupted when the session ended. No changes
-  landed; the worktree is clean.
-- The SDD ledger (git-ignored) is at
-  `.claude\worktrees\phase6\.superpowers\sdd\2026-09-27-phase6-hardening-uv-replace\progress.md`.
-  It holds the preflight scan, 5 rulings, 2 deferred minors, and the fix-round note.
+Phase 7 SDD is at setup:
+- The ledger and global constraints are in `.claude\worktrees\phase7\.superpowers\sdd\2026-09-27-phase7-c-changes-merge-pair\`.
+- A background agent was writing the preflight conflict scan to `preflight-scan.md` in that folder. Check that it exists and is complete. If it doesn't exist, rerun the scan.
+- No task has been dispatched.
+- Grayson has **not yet given his go** for Tasks 5-8. Those are the ArmorPaint checkout branches for the 3 C changes, plus the `integration/ap-mcp` build of `AP_BINARY`.
 
 ## ▶️ Next concrete step
 
-Resume SDD at **Task 1 fix round 1**. Dispatch a fresh implementer with the brief
-`task-1-brief.md`, the report `task-1-report.md`, and the two findings from the ledger:
-1. `run_script` keeps stdout/stderr on runner failures.
-2. Rewrite the stale `test_run_script_ok_true_does_not_prove_the_script_succeeded`
-   so it pins the early-`return` caveat.
-
-Then run the scoped re-review and continue with Task 2. The env recipe is in the
-plan's Global Constraints (`PYTHONPATH=<worktree>\src`, `AP_DOTENV` → main's `.env`).
+Resume SDD on the Phase 7 plan:
+1. Rule on each preflight-scan finding and record the rulings in the ledger.
+2. Dispatch Tasks 1-4. These are pure Python with no gate: the dependency registry and `--check` rows, the build-manifest writer, `merge_mesh_pair` tested against a mocked runner, and a GLB fixture with no UVs.
+3. Ask Grayson for the Task 5-8 go-aheads in one message, quoting each task's HUMAN GATE line. Each yes covers only the action it names.
 
 Alternatives:
-- **Free memory first.** The machine was at 2.6 GB free commit with 37 `claude.exe`
-  processes; ArmorPaint launches and bash forks were crashing. Closing idle sessions
-  makes every integration run faster and more reliable.
-- **Execute inline instead of via subagents.** Tasks 1-4 took ~1 h per subagent under
-  memory pressure. Inline execution saves the review seats but loses per-task
-  review, which the plan's size argues for keeping.
+- **Get the Task 5-8 go first, then run everything in order.** Waiting costs no work. Tasks 1-4 don't depend on the gates, so running them in the meantime is free.
+- **Rebase the plan onto current upstream before any C work.** Upstream `main` is `eec04adf`, while the checkout's `origin/main` is stale at `85f6cf1c`. Task 5 already re-pins, so this is only needed if Grayson wants to review the drift first.
 
 ## ❓ Open questions
 
-- **#2148:** still open with no review. When it merges, rebuild `AP_BINARY` from plain
-  upstream and retire the local fix branch.
-- **Known Issue #8 (open, source-read):** decimate, smooth, bevel and subdivide all call
-  `util_mesh_uv_unwrap()`, which likely scrambles paint on every object.
-  - Needs a repro on a painted multi-object project, plus a docstring warning.
-  - An upstream "skip re-unwrap" option would be a Phase 7 candidate.
-- **Known Issue #9 (open):** a cold-start first call can exceed the 30 s default
-  timeout.
-- **Zero-area rule consequence:** a Blender extrude round-trip (4.1% of the surface in
-  zero-UV-area faces) will fail `replace_mesh`. Revisit when Task 10 recalibrates on
-  real ArmorPaint.
-- **Parked small items:**
-  - the `_failure()` key-set assertion gap;
-  - spec Amendment 3's "6 of 7" prose;
-  - optional decimate follow-ups (corner close-up gallery render, normals assertion).
-- **Live mode:** still deferred.
+- **Task 5-8 go-aheads.** All four are pending with Grayson. The PR go-aheads (Tasks 14-16) come after Task 13 writes the PR texts.
+- **#2148** is still open with no review.
+- **Change 2 may have code-reading evidence only.** Setting a layer mask needs a fixture made in the GUI (optional Task 11).
+- **Unproven until Task 9 runs:**
+  - whether minic accepts `!=`;
+  - whether merge-down keeps the kept object's material;
+  - whether a child keeps its world pose when its parent is merged in.
+- **Parked for later, not Phase 7 scope:**
+  - `__wargv` (the real fix for Known Issue #12);
+  - a non-ASCII `%TEMP%` breaks every script tool;
+  - `armpack` string escaping;
+  - splicing `atlas_objects` on delete;
+  - Known Issue #8 (mesh edits re-unwrap every object's UVs);
+  - Known Issue #9 (cold-start timeout).
+- **Phase 6 deferred minors** (test naming, error-text polish, docstring history) are in `_to_delete\ArmorPaintMCP-sdd-phase6-2026-09-27\` → `progress.md`, if anyone wants them.
 
 ## 🗂️ Changed this session
 
-- **Branches:** `main` has `e1163ae` and `7082646` plus this wrap-up commit. `claude/phase6`
-  adds `77fca31` (fixtures + prototypes), `0ddccec` (plan) and `9070a14` (Task 1).
-- **Grill decisions (+ why):** all recorded in `docs/PLAN.md`.
-  - Item 8 supports both `round_trip` and `swap`, because both workflows are real.
-  - The UV match uses IoU **plus texel retention**. S3 showed IoU alone passes
-    island swaps and mirrors.
-  - All native formats are accepted, with an FBX size warning (Blender FBX lands at 100x).
-  - Verify-then-commit via "open original, save fresh sibling, `os.replace`". It also fixes
-    Known Issue #11's broken relative asset paths.
-  - D3: upstream-first with a local integration bridge. This is not standing approval
-    for PRs.
-  - D2: a `script_object_merge` wrapper, not the one-liner. The maintainer is moving
-    away from exposing raw `mesh_object_t` pointers to scripts.
-  - Split: Phase 6 needs no C changes; Phase 7 holds all the C work.
-- **Spike findings (overturned assumptions):**
-  - Stdout **is** pipe-capturable since upstream `3b77ab8c`.
-  - The `--api` JSON has unescaped backslashes, so the shipped `inspect_project` fails
-    on real Windows projects (Known Issue #10, reproduced).
-  - `WITH_PLUGINS` means fbx/glb/gltf import natively; S3's "no FBX" was wrong.
-  - `script_append_mesh` needs doubled backslashes.
-  - `project_save` must be a script's last statement.
-- **Decimate gallery symptom:** closed as Known Issue #7. It's a fixture-scale effect:
-  only the 0.03-unit bevel strips collapse. The "doesn't call the fixed functions" claim
-  was wrong.
-- **Housekeeping:** retired the `pickup-4c87f9` worktree. Memory got a new
-  append/--api gotchas note, and the stdout note was superseded.
+- **Branches:**
+  - `claude/phase6` (17 commits, `9070a14`..`be2b447`) merged into `main` as `c23f437`.
+  - `main` also gained `36262e1` (Phase 7 approved) and `ce03241` (Phase 7 plan).
+  - All pushed at wrap-up.
+- **Decisions (+ why):**
+  - Duplicate object names make `replace_mesh` fail closed. `script_get_object` and the Python lookup could otherwise pick different objects.
+  - The size-ratio band became the named constant `SIZE_RATIO_WARN`, per the rule against uncited magic numbers.
+  - The non-ASCII fix is a pre-launch guard only, with no log-line detection. The guard removes the trigger. The residual case, an ASCII path that fails to open mid-run, is recorded under Known Issue #12.
+  - Phase 7 route (D3): one small upstream PR per C change, plus a local `integration/ap-mcp` build. `--check` trusts a git-derived build manifest bound to the binary's SHA-256, because changes 1 and 2 add no `--api` name.
+- **Corrections:** PLAN.md had change 2's delete-path site wrong. `tab_meshes.c:128-134` is the reorder remap; the delete path is `:443-476`. Fixed in `ce03241`.
 
 ---
 📜 Full session history: `handoff-log/` (one dated file per session, oldest to newest)
