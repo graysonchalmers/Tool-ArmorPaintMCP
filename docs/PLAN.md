@@ -690,10 +690,12 @@ risk.
 3. The `replace_mesh` tool and unit tests.
 4. Integration tests (see Gate).
 
-## Phase 7 (DRAFT, not approved) — ArmorPaint C changes + item 9
+## Phase 7 (APPROVED 2026-09-27) — ArmorPaint C changes + item 9
 
-> Split out of Phase 6 on 2026-09-27 (grill Q12). Starts only after
-> Phase 6's gate is green.
+> Split out of Phase 6 on 2026-09-27 (grill Q12). Approved by Grayson
+> 2026-09-27 after Phase 6's gate went green and merged to `main` (`c23f437`).
+> Approval covers planning and execution; each ArmorPaint checkout change and
+> each upstream PR still needs his explicit go (D3).
 
 **Route (D3): upstream-first, bridged locally.**
 - One small, single-purpose upstream PR per change. **Each PR is opened
@@ -729,6 +731,9 @@ each needs Grayson's go): escape strings in `armpack_to_json_value`
 (`base/sources/iron_armpack.c:799-801`, Known Issue #10's root cause); a
 NULL check for an unregistered mesh-importer extension
 (`io/import_mesh.c:39-42`).
+Found by Phase 6's final review: read argv as wide (`__wargv`) on
+Windows (`base/sources/backends/windows_system.c:860`, Known Issue #12's
+root cause), which would retire the pre-launch ASCII guard.
 
 ### 7.1 (was 6.3) — Item 9: targeted 2-object merge
 

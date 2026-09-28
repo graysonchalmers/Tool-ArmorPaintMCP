@@ -7,9 +7,10 @@
 **Open phase:** **Phase 6 gate green, 2026-09-27** (rename hardening, ROADMAP
 item 10 UV check `check_mesh_uvs`, item 8 mesh replace `replace_mesh`; no
 ArmorPaint C change). Spikes S1-S5, then 6.1 → 6.2 → 6.3 (`docs/PLAN.md`), all
-done. 6.0 (re-baseline on current upstream) closed as Known Issue #6. **Phase
-7** (three upstream C changes + item 9 targeted merge) is next, still a
-draft, not approved.
+done. 6.0 (re-baseline on current upstream) closed as Known Issue #6. Merged to `main` as `c23f437`. **Phase
+7** (three upstream C changes + item 9 targeted merge) **approved 2026-09-27**;
+planning. Each ArmorPaint checkout change and upstream PR still needs
+Grayson's go.
 
 ---
 
