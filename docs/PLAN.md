@@ -716,7 +716,8 @@ risk.
    gate test for a UV-less non-OBJ rejection only once this is in
    `AP_BINARY`.
 2. **Object-mask remap on delete (D5: yes, upstream it).** The delete path
-   (`ui/tab_meshes.c:128-134`) should remap the way
+   (`tab_meshes_draw_context_menu_delete`, `ui/tab_meshes.c:443-476`; the
+   `:128-134` remap is the reorder path, corrected 2026-09-27) should remap the way
    `util_mesh_merge_geometry_down` already does (`util/util_mesh.c:637-645`).
 3. **`script_object_merge(object_t *o, object_t *into)` (D2).** It goes in
    `minic_impl.c`, in the maintainer's `c0df922d` shape: take `object_t*`,
